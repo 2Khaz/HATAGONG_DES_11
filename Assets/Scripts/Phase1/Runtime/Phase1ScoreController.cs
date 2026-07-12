@@ -1,16 +1,16 @@
 using System;
 using TMPro;
 using UnityEngine;
+using HATAGONG.GameFlow;
 
 namespace HATAGONG.Phase1
 {
     public sealed class Phase1ScoreController : MonoBehaviour
     {
-        [SerializeField] private TextMeshProUGUI scoreValueText;
-        public int Score { get; private set; }
+        [SerializeField] private GameScoreController gameScore;
+        public int Score => gameScore?gameScore.CurrentScore:0;
         public event Action<int> ScoreChanged;
-        public void ResetScore(){Score=0;Refresh();}
-        public void Add(int amount){Score+=amount;Refresh();ScoreChanged?.Invoke(Score);}
-        private void Refresh(){if(scoreValueText)scoreValueText.text=Score.ToString();}
+        public void ResetScore(){gameScore?.ResetForNewSession();ScoreChanged?.Invoke(Score);}
+        public void Add(int amount,ScoreReason reason=ScoreReason.Other){if(gameScore&&gameScore.AddScore(amount,GamePhaseId.Phase1,reason))ScoreChanged?.Invoke(Score);}
     }
 }
