@@ -1,0 +1,349 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: daef0d11503c22e45abcb59750ac76df, type: 3}
+  m_Name: Phase1GameConfig
+  m_EditorClassIdentifier: Assembly-CSharp::HATAGONG.Phase1.Phase1GameConfig
+  boardSize: 5
+  generateOnStart: 1
+  tileDebounce: 0.04
+  currentBagAttempts: 20
+  alternativeBagAttempts: 20
+  hitScore: 10
+  destroyScore: 50
+  clearScore: 300
+  overallGameDurationSeconds: 90
+  easyHashCapacity: 30
+  normalHashCapacity: 50
+  hardHashCapacity: 50
+  punchScale: 0.97
+  punchDownDuration: 0.04
+  punchReturnDuration: 0.06
+  enableSound: 1
+  normalHitClip: {fileID: 0}
+  damageStateChangeClip: {fileID: 0}
+  destroyClip: {fileID: 0}
+  coreHitClip: {fileID: 0}
+  normalHitVolume: 1
+  damageStateChangeVolume: 1
+  destroyVolume: 1
+  coreHitVolume: 1
+  enableVibration: 1
+  vibrateOnNormalHit: 0
+  vibrateOnDamageStateChange: 1
+  vibrateOnDestroy: 1
+  bags:
+  - id: EASY_A
+    difficulty: 0
+    oneByOne: 0
+    oneByTwo: 0
+    oneByThree: 2
+    twoByTwo: 1
+    twoByThree: 1
+    threeByThree: 1
+    expectedTileCount: 5
+    expectedArea: 25
+    expectedHp: 38
+  - id: EASY_B
+    difficulty: 0
+    oneByOne: 0
+    oneByTwo: 1
+    oneByThree: 0
+    twoByTwo: 2
+    twoByThree: 1
+    threeByThree: 1
+    expectedTileCount: 5
+    expectedArea: 25
+    expectedHp: 39
+  - id: EASY_C
+    difficulty: 0
+    oneByOne: 0
+    oneByTwo: 1
+    oneByThree: 1
+    twoByTwo: 2
+    twoByThree: 2
+    threeByThree: 0
+    expectedTileCount: 6
+    expectedArea: 25
+    expectedHp: 40
+  - id: EASY_D
+    difficulty: 0
+    oneByOne: 0
+    oneByTwo: 2
+    oneByThree: 0
+    twoByTwo: 3
+    twoByThree: 0
+    threeByThree: 1
+    expectedTileCount: 6
+    expectedArea: 25
+    expectedHp: 38
+  - id: NORMAL_A
+    difficulty: 1
+    oneByOne: 2
+    oneByTwo: 1
+    oneByThree: 1
+    twoByTwo: 3
+    twoByThree: 1
+    threeByThree: 0
+    expectedTileCount: 8
+    expectedArea: 25
+    expectedHp: 53
+  - id: NORMAL_B
+    difficulty: 1
+    oneByOne: 2
+    oneByTwo: 0
+    oneByThree: 1
+    twoByTwo: 2
+    twoByThree: 2
+    threeByThree: 0
+    expectedTileCount: 7
+    expectedArea: 25
+    expectedHp: 53
+  - id: NORMAL_C
+    difficulty: 1
+    oneByOne: 2
+    oneByTwo: 1
+    oneByThree: 0
+    twoByTwo: 3
+    twoByThree: 0
+    threeByThree: 1
+    expectedTileCount: 7
+    expectedArea: 25
+    expectedHp: 52
+  - id: NORMAL_D
+    difficulty: 1
+    oneByOne: 2
+    oneByTwo: 2
+    oneByThree: 1
+    twoByTwo: 1
+    twoByThree: 2
+    threeByThree: 0
+    expectedTileCount: 8
+    expectedArea: 25
+    expectedHp: 49
+  - id: HARD_A
+    difficulty: 2
+    oneByOne: 3
+    oneByTwo: 3
+    oneByThree: 2
+    twoByTwo: 1
+    twoByThree: 1
+    threeByThree: 0
+    expectedTileCount: 10
+    expectedArea: 25
+    expectedHp: 58
+  - id: HARD_B
+    difficulty: 2
+    oneByOne: 4
+    oneByTwo: 1
+    oneByThree: 1
+    twoByTwo: 1
+    twoByThree: 2
+    threeByThree: 0
+    expectedTileCount: 9
+    expectedArea: 25
+    expectedHp: 65
+  - id: HARD_C
+    difficulty: 2
+    oneByOne: 3
+    oneByTwo: 2
+    oneByThree: 4
+    twoByTwo: 0
+    twoByThree: 1
+    threeByThree: 0
+    expectedTileCount: 10
+    expectedArea: 25
+    expectedHp: 59
+  - id: HARD_D
+    difficulty: 2
+    oneByOne: 3
+    oneByTwo: 2
+    oneByThree: 0
+    twoByTwo: 3
+    twoByThree: 1
+    threeByThree: 0
+    expectedTileCount: 9
+    expectedArea: 25
+    expectedHp: 62
+  visuals:
+  - shape: 0
+    normal: {fileID: 0}
+    damage1: {fileID: 0}
+    damage2: {fileID: 0}
+    damage3: {fileID: 0}
+  - shape: 1
+    normal: {fileID: 0}
+    damage1: {fileID: 0}
+    damage2: {fileID: 0}
+    damage3: {fileID: 0}
+  - shape: 2
+    normal: {fileID: 0}
+    damage1: {fileID: 0}
+    damage2: {fileID: 0}
+    damage3: {fileID: 0}
+  - shape: 3
+    normal: {fileID: 0}
+    damage1: {fileID: 0}
+    damage2: {fileID: 0}
+    damage3: {fileID: 0}
+  - shape: 4
+    normal: {fileID: 0}
+    damage1: {fileID: 0}
+    damage2: {fileID: 0}
+    damage3: {fileID: 0}
+  - shape: 5
+    normal: {fileID: 0}
+    damage1: {fileID: 0}
+    damage2: {fileID: 0}
+    damage3: {fileID: 0}
+  gradeDefinitions:
+  - grade: 0
+    gradeId: BEIGE
+    displayName: Beige
+    hpModifier: -1
+    easyWeight: 40
+    normalWeight: 20
+    hardWeight: 10
+    easyMaxCount: 0
+    normalMaxCount: 0
+    hardMaxCount: 0
+    enabled: 1
+  - grade: 1
+    gradeId: BROWN
+    displayName: Brown
+    hpModifier: 0
+    easyWeight: 35
+    normalWeight: 40
+    hardWeight: 30
+    easyMaxCount: 0
+    normalMaxCount: 0
+    hardMaxCount: 0
+    enabled: 1
+  - grade: 2
+    gradeId: GRAY
+    displayName: Gray
+    hpModifier: 1
+    easyWeight: 20
+    normalWeight: 30
+    hardWeight: 40
+    easyMaxCount: 0
+    normalMaxCount: 0
+    hardMaxCount: 0
+    enabled: 1
+  - grade: 3
+    gradeId: MARBLE
+    displayName: Marble
+    hpModifier: 2
+    easyWeight: 5
+    normalWeight: 10
+    hardWeight: 20
+    easyMaxCount: 1
+    normalMaxCount: 1
+    hardMaxCount: 2
+    enabled: 1
+  gradeVisualSets:
+  - grade: 0
+    visualSetId: BEIGE
+    fallbackColor: {r: 0.86, g: 0.76, b: 0.59, a: 1}
+    squareNormalSprite: {fileID: 0}
+    squareDamage1Sprite: {fileID: 0}
+    squareDamage2Sprite: {fileID: 0}
+    squareDamage3Sprite: {fileID: 0}
+    rect2x1NormalSprite: {fileID: 0}
+    rect2x1Damage1Sprite: {fileID: 0}
+    rect2x1Damage2Sprite: {fileID: 0}
+    rect2x1Damage3Sprite: {fileID: 0}
+    rect3x1NormalSprite: {fileID: 0}
+    rect3x1Damage1Sprite: {fileID: 0}
+    rect3x1Damage2Sprite: {fileID: 0}
+    rect3x1Damage3Sprite: {fileID: 0}
+    rect3x2NormalSprite: {fileID: 0}
+    rect3x2Damage1Sprite: {fileID: 0}
+    rect3x2Damage2Sprite: {fileID: 0}
+    rect3x2Damage3Sprite: {fileID: 0}
+    hitAudioOverride: {fileID: 0}
+    damageAudioOverride: {fileID: 0}
+    destroyAudioOverride: {fileID: 0}
+  - grade: 1
+    visualSetId: BROWN
+    fallbackColor: {r: 0.48, g: 0.29, b: 0.16, a: 1}
+    squareNormalSprite: {fileID: 0}
+    squareDamage1Sprite: {fileID: 0}
+    squareDamage2Sprite: {fileID: 0}
+    squareDamage3Sprite: {fileID: 0}
+    rect2x1NormalSprite: {fileID: 0}
+    rect2x1Damage1Sprite: {fileID: 0}
+    rect2x1Damage2Sprite: {fileID: 0}
+    rect2x1Damage3Sprite: {fileID: 0}
+    rect3x1NormalSprite: {fileID: 0}
+    rect3x1Damage1Sprite: {fileID: 0}
+    rect3x1Damage2Sprite: {fileID: 0}
+    rect3x1Damage3Sprite: {fileID: 0}
+    rect3x2NormalSprite: {fileID: 0}
+    rect3x2Damage1Sprite: {fileID: 0}
+    rect3x2Damage2Sprite: {fileID: 0}
+    rect3x2Damage3Sprite: {fileID: 0}
+    hitAudioOverride: {fileID: 0}
+    damageAudioOverride: {fileID: 0}
+    destroyAudioOverride: {fileID: 0}
+  - grade: 2
+    visualSetId: GRAY
+    fallbackColor: {r: 0.48, g: 0.51, b: 0.54, a: 1}
+    squareNormalSprite: {fileID: 0}
+    squareDamage1Sprite: {fileID: 0}
+    squareDamage2Sprite: {fileID: 0}
+    squareDamage3Sprite: {fileID: 0}
+    rect2x1NormalSprite: {fileID: 0}
+    rect2x1Damage1Sprite: {fileID: 0}
+    rect2x1Damage2Sprite: {fileID: 0}
+    rect2x1Damage3Sprite: {fileID: 0}
+    rect3x1NormalSprite: {fileID: 0}
+    rect3x1Damage1Sprite: {fileID: 0}
+    rect3x1Damage2Sprite: {fileID: 0}
+    rect3x1Damage3Sprite: {fileID: 0}
+    rect3x2NormalSprite: {fileID: 0}
+    rect3x2Damage1Sprite: {fileID: 0}
+    rect3x2Damage2Sprite: {fileID: 0}
+    rect3x2Damage3Sprite: {fileID: 0}
+    hitAudioOverride: {fileID: 0}
+    damageAudioOverride: {fileID: 0}
+    destroyAudioOverride: {fileID: 0}
+  - grade: 3
+    visualSetId: MARBLE
+    fallbackColor: {r: 0.88, g: 0.9, b: 0.92, a: 1}
+    squareNormalSprite: {fileID: 0}
+    squareDamage1Sprite: {fileID: 0}
+    squareDamage2Sprite: {fileID: 0}
+    squareDamage3Sprite: {fileID: 0}
+    rect2x1NormalSprite: {fileID: 0}
+    rect2x1Damage1Sprite: {fileID: 0}
+    rect2x1Damage2Sprite: {fileID: 0}
+    rect2x1Damage3Sprite: {fileID: 0}
+    rect3x1NormalSprite: {fileID: 0}
+    rect3x1Damage1Sprite: {fileID: 0}
+    rect3x1Damage2Sprite: {fileID: 0}
+    rect3x1Damage3Sprite: {fileID: 0}
+    rect3x2NormalSprite: {fileID: 0}
+    rect3x2Damage1Sprite: {fileID: 0}
+    rect3x2Damage2Sprite: {fileID: 0}
+    rect3x2Damage3Sprite: {fileID: 0}
+    hitAudioOverride: {fileID: 0}
+    damageAudioOverride: {fileID: 0}
+    destroyAudioOverride: {fileID: 0}
+  minimumFinalTileHp: 2
+  gradeAssignmentAttempts: 20
+  defaultFallbackGrade: 1
+  easyModifierMin: -2
+  easyModifierMax: 1
+  normalModifierMin: -1
+  normalModifierMax: 2
+  hardModifierMin: 0
+  hardModifierMax: 4
