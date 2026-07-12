@@ -3173,6 +3173,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1039023716}
+  - component: {fileID: 1039023717}
   m_Layer: 5
   m_Name: Game_UI_General
   m_TagString: Untagged
@@ -3206,6 +3207,20 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!114 &1039023717
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1039023715}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 180221498b68c584db66c8859cac86de, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HATAGONG.GameFlow.GameTimerController
+  config: {fileID: 11400000, guid: a1745d6946417dd4282bb9087bc105f0, type: 2}
+  startOnStart: 1
 --- !u!1 &1040048676
 GameObject:
   m_ObjectHideFlags: 0
@@ -4999,6 +5014,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 2082341593}
+  - component: {fileID: 2082341594}
   m_Layer: 5
   m_Name: Time_Content
   m_TagString: Untagged
@@ -5029,6 +5045,20 @@ RectTransform:
   m_AnchoredPosition: {x: 456, y: -72}
   m_SizeDelta: {x: 528, y: 346}
   m_Pivot: {x: 0, y: 1}
+--- !u!114 &2082341594
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2082341592}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9d57be23a4445684abf2e0e3f38c02d3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HATAGONG.GameFlow.GameTimerPresenter
+  controller: {fileID: 1039023717}
+  timeValueText: {fileID: 1599640315}
 --- !u!21 &2114595427
 Material:
   serializedVersion: 8

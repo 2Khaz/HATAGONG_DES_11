@@ -6,6 +6,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.UI;
 using System.Linq;
+using HATAGONG.GameFlow;
 
 namespace HATAGONG.Phase1Editor
 {
@@ -34,6 +35,8 @@ namespace HATAGONG.Phase1Editor
             var effects=Require("Canvas/Game_UI_General/Middle_GamePanel/Phase1_FieldRoot/Phase1_EffectRoot");
             var popups=Require("Canvas/Game_UI_General/Middle_GamePanel/Phase1_FieldRoot/Phase1_ScorePopupRoot");
             var score=Require("Canvas/Game_UI_General/Top_HUD/Score_Content/Score_Value");
+            var timeContent=Require("Canvas/Game_UI_General/Top_HUD/Time_Content");
+            var timeValue=Require("Canvas/Game_UI_General/Top_HUD/Time_Content/Time_Value");
             var diffText=Require("Canvas/Game_UI_General/Top_HUD/Difficulty_Content/Difficulty_Text");
             var star1=Require("Canvas/Game_UI_General/Top_HUD/Difficulty_Content/Difficulty_StarArea/Diff01_Star");
             var star2=Require("Canvas/Game_UI_General/Top_HUD/Difficulty_Content/Difficulty_StarArea/Diff02_Star");
@@ -45,23 +48,34 @@ namespace HATAGONG.Phase1Editor
             Set(hud,("difficultyText",diffText.GetComponent<TextMeshProUGUI>()));var hso=new SerializedObject(hud);var stars=hso.FindProperty("difficultyStars");stars.arraySize=3;stars.GetArrayElementAtIndex(0).objectReferenceValue=star1.GetComponent<Image>();stars.GetArrayElementAtIndex(1).objectReferenceValue=star2.GetComponent<Image>();stars.GetArrayElementAtIndex(2).objectReferenceValue=star3.GetComponent<Image>();hso.ApplyModifiedProperties();
             hso=new SerializedObject(hud);hso.FindProperty("filledStarSprite").objectReferenceValue=AssetDatabase.LoadAssetAtPath<Sprite>("Assets/resource/Img_icon_star2.png");hso.FindProperty("emptyStarSprite").objectReferenceValue=AssetDatabase.LoadAssetAtPath<Sprite>("Assets/resource/Img_icon_star1.png");hso.ApplyModifiedProperties();
             Set(feedback,("audioSource",audio),("config",config));
+            var timer=Add<GameTimerController>(GameObject.Find("Canvas/Game_UI_General"));
+            var timerPresenter=Add<GameTimerPresenter>(timeContent);
+            Set(timer,("config",config));Set(timerPresenter,("controller",timer),("timeValueText",timeValue.GetComponent<TextMeshProUGUI>()));
             EditorUtility.SetDirty(field);AssetDatabase.SaveAssets();EditorSceneManager.MarkSceneDirty(field.scene);EditorSceneManager.SaveScene(field.scene);Debug.Log("[Phase1] Prototype setup and scene save completed.");
         }
         [MenuItem("Tools/HATAGONG/Phase1/Validate Generation Matrix")]
-        public static void ValidateGenerationMatrix()
+        public static void ValidateGenerationMatrix(){ValidateGenerationMatrix(10,"Matrix");}
+        [MenuItem("Tools/HATAGONG/Phase1/Validate Generation Stress 1200")]
+        public static void ValidateGenerationStress(){ValidateGenerationMatrix(100,"Stress");}
+        [MenuItem("Tools/HATAGONG/Phase1/Regenerate Active Board")]
+        public static void RegenerateActiveBoard(){if(!Application.isPlaying){Debug.LogError("[Phase1][HistoryTest] Play Mode required.");return;}var board=Object.FindFirstObjectByType<Phase1BoardController>();if(!board){Debug.LogError("[Phase1][HistoryTest] Board controller missing.");return;}board.RegenerateBoard();}
+        private static void ValidateGenerationMatrix(int seedsPerBag,string label)
         {
             var config=AssetDatabase.LoadAssetAtPath<Phase1GameConfig>("Assets/Settings/Phase1/Phase1GameConfig.asset");if(!config||!config.ValidateAllBags())throw new System.InvalidOperationException("Phase1 config or bag validation failed.");
-            var generator=new Phase1BoardGenerator(config);int success=0,total=0;
-            foreach(var bag in config.Bags)for(int i=0;i<10;i++)
+            var generator=new Phase1BoardGenerator(config);int success=0,total=0,testedTiles=0,minimumHpViolations=0,hpMismatches=0;
+            foreach(var bag in config.Bags)for(int i=0;i<seedsPerBag;i++)
             {
                 total++;Phase1BoardState board=null;string error="generation failed";int usedSeed=0;
                 for(int attempt=0;attempt<20;attempt++){usedSeed=1000+(total*370)+(attempt*37);if(generator.TryGenerate(bag.Difficulty,bag,usedSeed,true,out var candidate)&&Phase1PlacementValidator.ValidateFinal(candidate.Tiles,config.BoardSize,out error)){board=candidate;break;}}
-                if(board!=null&&board.Tiles.All(x=>x.MinimumHpValid&&x.MaxHp>=config.MinimumFinalTileHp&&x.MaxHp==x.BaseHp+x.GradeHpModifier)){success++;Debug.Log($"[Phase1][Matrix] {bag.Id} seed={usedSeed} tiles={board.Tiles.Count} area={board.Tiles.Sum(x=>x.GridWidth*x.GridHeight)} baseHp={board.Tiles.Sum(x=>x.BaseHp)} modifier={board.Tiles.Sum(x=>x.GradeHpModifier)} finalHp={board.Tiles.Sum(x=>x.MaxHp)} layout={board.LayoutHash} variant={board.VariantHash}");}
-                else Debug.LogError($"[Phase1][Matrix] FAILED {bag.Id} after 20 attempts error={error}");
+                if(board!=null){testedTiles+=board.Tiles.Count;minimumHpViolations+=board.Tiles.Count(x=>!x.MinimumHpValid||x.MaxHp<config.MinimumFinalTileHp);hpMismatches+=board.Tiles.Count(x=>x.MaxHp!=x.BaseHp+x.GradeHpModifier);}
+                if(board!=null&&board.Tiles.All(x=>x.MinimumHpValid&&x.MaxHp>=config.MinimumFinalTileHp&&x.MaxHp==x.BaseHp+x.GradeHpModifier)){success++;if(seedsPerBag<=10)Debug.Log($"[Phase1][{label}] {bag.Id} seed={usedSeed} tiles={board.Tiles.Count} area={board.Tiles.Sum(x=>x.GridWidth*x.GridHeight)} baseHp={board.Tiles.Sum(x=>x.BaseHp)} modifier={board.Tiles.Sum(x=>x.GradeHpModifier)} finalHp={board.Tiles.Sum(x=>x.MaxHp)} layout={board.LayoutHash} variant={board.VariantHash}");}
+                else Debug.LogError($"[Phase1][{label}] FAILED {bag.Id} after 20 attempts error={error}");
             }
-            Debug.Log($"[Phase1][Matrix] result={success}/{total}");
+            Debug.Log($"[Phase1][{label}] result={success}/{total}, tiles={testedTiles}, minimumHpViolations={minimumHpViolations}, hpMismatches={hpMismatches}");
             foreach(var bag in config.Bags.GroupBy(x=>x.Difficulty).Select(x=>x.First())){int seed=24680+(int)bag.Difficulty;generator.TryGenerate(bag.Difficulty,bag,seed,true,out var a);generator.TryGenerate(bag.Difficulty,bag,seed,true,out var b);Debug.Log($"[Phase1][FixedSeed] difficulty={bag.Difficulty}, bag={bag.Id}, seed={seed}, layoutMatch={a?.LayoutHash==b?.LayoutHash}, variantMatch={a?.VariantHash==b?.VariantHash}");}
+            ValidateDamageStates();
         }
+        private static void ValidateDamageStates(){var cases=new[]{(2,2,Phase1DamageState.Normal),(2,1,Phase1DamageState.Damage2),(2,0,Phase1DamageState.Destroyed),(4,4,Phase1DamageState.Normal),(4,3,Phase1DamageState.Damage1),(4,2,Phase1DamageState.Damage3),(4,1,Phase1DamageState.Damage3),(4,0,Phase1DamageState.Destroyed),(8,8,Phase1DamageState.Normal),(8,7,Phase1DamageState.Normal),(8,6,Phase1DamageState.Damage1),(8,4,Phase1DamageState.Damage2),(8,2,Phase1DamageState.Damage3),(8,1,Phase1DamageState.Damage3),(8,0,Phase1DamageState.Destroyed)};int failures=cases.Count(x=>Phase1TileView.CalculateState(x.Item1,x.Item2)!=x.Item3);if(failures>0)Debug.LogError($"[Phase1][DamageState] failures={failures}/{cases.Length}");else Debug.Log($"[Phase1][DamageState] result={cases.Length}/{cases.Length}");}
         private static GameObject CreatePrefab(string path){var root=new GameObject("Phase1_TilePrefab",typeof(RectTransform),typeof(CanvasRenderer),typeof(Image),typeof(Phase1TileView));var rootImage=root.GetComponent<Image>();rootImage.color=new Color(1,1,1,0);rootImage.raycastTarget=true;rootImage.alphaHitTestMinimumThreshold=0;var child=new GameObject("Tile_Visual",typeof(RectTransform),typeof(CanvasRenderer),typeof(Image));child.transform.SetParent(root.transform,false);var rt=child.GetComponent<RectTransform>();rt.anchorMin=Vector2.zero;rt.anchorMax=Vector2.one;rt.offsetMin=rt.offsetMax=Vector2.zero;var image=child.GetComponent<Image>();image.raycastTarget=false;image.color=new Color(.72f,.58f,.38f,1);Set(root.GetComponent<Phase1TileView>(),("hitArea",rootImage),("visualImage",image),("visualRoot",rt));var prefab=PrefabUtility.SaveAsPrefabAsset(root,path);Object.DestroyImmediate(root);return prefab;}
         private static void EnsureFolder(string path){if(AssetDatabase.IsValidFolder(path))return;int slash=path.LastIndexOf('/');AssetDatabase.CreateFolder(path[..slash],path[(slash+1)..]);}
         private static GameObject Require(string path){var go=GameObject.Find(path);if(!go)throw new System.InvalidOperationException("Required object missing: "+path);return go;}
