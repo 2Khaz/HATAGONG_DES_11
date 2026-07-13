@@ -348,11 +348,50 @@ namespace HATAGONG.GameFlow.Editor
             check(!boardSo.FindProperty("generateOnStart").boolValue, "scene phase1 automatic generation disabled");
             check(sessionSo.FindProperty("timer").objectReferenceValue && sessionSo.FindProperty("score").objectReferenceValue && sessionSo.FindProperty("startOverlay").objectReferenceValue && sessionSo.FindProperty("transition").objectReferenceValue, "session required references preserved");
             var phases = sessionSo.FindProperty("phases");
-            check(phases.arraySize == 1 && phases.GetArrayElementAtIndex(0).objectReferenceValue == adapter, "scene registers existing phase1 adapter only");
+            Phase1PhaseAdapter[] phase1Adapters = UnityEngine.Object.FindObjectsByType<Phase1PhaseAdapter>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            Phase2PhaseAdapter[] phase2Adapters = UnityEngine.Object.FindObjectsByType<Phase2PhaseAdapter>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            Phase2PhaseAdapter phase2Adapter = phase2Adapters.Length > 0 ? phase2Adapters[0] : null;
+            GameObject middle = GameObject.Find("Canvas/Game_UI_General/Middle_GamePanel");
+            Transform phase1Root = middle ? middle.transform.Find("Phase1_FieldRoot") : null;
+            Transform phase2Root = middle ? middle.transform.Find("Phase2Root") : null;
+            check(phase1Adapters.Length == 1 && phase1Adapters[0] == adapter && phase1Root && adapter.gameObject == phase1Root.gameObject, "scene contains the existing phase1 adapter exactly once");
+
+            int phase1RegistrationCount = 0;
+            int phase2RegistrationCount = 0;
+            int nullRegistrationCount = 0;
+            int otherRegistrationCount = 0;
+            for (int i = 0; i < phases.arraySize; i++)
+            {
+                UnityEngine.Object entry = phases.GetArrayElementAtIndex(i).objectReferenceValue;
+                if (!entry) nullRegistrationCount++;
+                else if (entry == adapter) phase1RegistrationCount++;
+                else if (phase2Adapter && entry == phase2Adapter) phase2RegistrationCount++;
+                else otherRegistrationCount++;
+            }
+            check(phase1RegistrationCount == 1, "scene registers the existing phase1 adapter exactly once");
+            check(sessionSo.FindProperty("initialPhase").intValue == (int)GamePhaseId.Phase1, "scene keeps phase1 as the initial phase");
+
+            if (phase2Adapters.Length == 0)
+            {
+                check(!phase2Root, "stage5a scene has no phase2 root before integration");
+                check(phases.arraySize == 1 && phases.GetArrayElementAtIndex(0).objectReferenceValue == adapter, "stage5a scene contains only phase1 before phase2 integration");
+                check(nullRegistrationCount == 0 && otherRegistrationCount == 0 && phase2RegistrationCount == 0, "stage5a scene has no null or additional phase registrations");
+            }
+            else
+            {
+                check(phase2Adapters.Length == 1 && phase2Root && phase2Adapter.gameObject == phase2Root.gameObject, "integrated scene contains exactly one phase2 adapter on Phase2Root");
+                check(phases.arraySize == 2, "integrated scene registers exactly two phases");
+                check(phase2RegistrationCount == 1, "integrated scene registers the phase2 adapter exactly once");
+                check(nullRegistrationCount == 0 && otherRegistrationCount == 0, "integrated scene has no null or unknown phase registrations");
+                check(phases.GetArrayElementAtIndex(0).objectReferenceValue == adapter && phases.GetArrayElementAtIndex(1).objectReferenceValue == phase2Adapter, "integrated scene registers phase1 then phase2 exactly once");
+                check(phase1Root && phase2Root && phase1Root != phase2Root && adapter.gameObject != phase2Adapter.gameObject, "integrated scene keeps phase1 and phase2 on distinct roots");
+                check(!phase2Root.gameObject.activeSelf, "integrated scene keeps phase2 root initially inactive");
+            }
             check(adapterSo.FindProperty("board").objectReferenceValue == board && adapterSo.FindProperty("input").objectReferenceValue, "phase1 adapter references preserved");
+            check(sessionSo.FindProperty("transition").objectReferenceValue == transition, "session transition controller reference preserved");
             check(transitionSo.FindProperty("overlay").objectReferenceValue == overlay && transitionSo.FindProperty("phaseHud").objectReferenceValue, "transition references preserved");
-            check(!GameObject.Find("Canvas/Game_UI_General/Middle_GamePanel/Phase2Root"), "phase2 root not created in stage5a");
             check(Mathf.Approximately(overlay.TotalConfiguredDuration, overlay.EnterDuration + overlay.HoldDuration + overlay.ExitDuration + overlay.CompletionDelay), "overlay duration is exact configured sum");
+            check(Mathf.Approximately(overlay.TotalConfiguredDuration, 0.75f), "overlay duration remains 0.75 seconds");
             check(overlay.TotalConfiguredDuration <= 2f, "overlay duration within absolute 2.0 second ceiling");
             check(overlay.TotalConfiguredDuration <= 1.4f, "overlay duration within recommended 1.4 second target");
             if (overlay.TotalConfiguredDuration > 1.4f) Debug.LogWarning($"[Phase2Stage5A][Timing] configured overlay duration exceeds target: {overlay.TotalConfiguredDuration:F3}s");
