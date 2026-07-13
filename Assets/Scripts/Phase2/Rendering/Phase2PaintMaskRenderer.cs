@@ -127,7 +127,7 @@ namespace HATAGONG.Phase2.Rendering
             for (int i = 0; i < inputCount; i++)
             {
                 Phase2PaintStamp stamp = stamps[i];
-                if (!IsValidAndIntersectsBoard(stamp))
+                if (!Phase2PaintGeometry.IsCircleIntersectingUnitBoard(stamp.CenterU, stamp.CenterV, stamp.RadiusRatio))
                 {
                     continue;
                 }
@@ -265,29 +265,6 @@ namespace HATAGONG.Phase2.Rendering
             {
                 RenderTexture.active = previous;
             }
-        }
-
-        private static bool IsValidAndIntersectsBoard(Phase2PaintStamp stamp)
-        {
-            float radius = stamp.RadiusRatio;
-            if (!IsFinite(stamp.CenterU) || !IsFinite(stamp.CenterV) || !IsFinite(radius) || radius <= 0f)
-            {
-                return false;
-            }
-
-            double centerU = stamp.CenterU;
-            double centerV = stamp.CenterV;
-            double nearestU = Math.Max(0d, Math.Min(1d, centerU));
-            double nearestV = Math.Max(0d, Math.Min(1d, centerV));
-            double deltaU = centerU - nearestU;
-            double deltaV = centerV - nearestV;
-            double radiusDouble = radius;
-            return deltaU * deltaU + deltaV * deltaV < radiusDouble * radiusDouble;
-        }
-
-        private static bool IsFinite(float value)
-        {
-            return !float.IsNaN(value) && !float.IsInfinity(value);
         }
 
         private void AppendStampQuad(Phase2PaintStamp stamp)

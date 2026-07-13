@@ -43,8 +43,14 @@ namespace HATAGONG.Phase2
         }
 
         public Phase2PaintConfig Config => _config;
-        public Phase2PaintSessionModel Session => _session;
-        public Phase2PaintMaskRenderer MaskRenderer => _renderer;
+        public Phase2PaintSessionState CurrentState => _session.CurrentState;
+        public int PaintedCellCount => _session.Grid.PaintedCellCount;
+        public int Score => _session.Score;
+        public Phase2MilestoneFlags Milestones => _session.Milestones;
+        public UnityEngine.RenderTexture MaskTexture => _renderer.MaskTexture;
+        public UnityEngine.Experimental.Rendering.GraphicsFormat MaskFormat => _renderer.SelectedFormat;
+        public bool RendererInitialized => _renderer.IsInitialized;
+        public int OwnedRenderTextureCount => _renderer.OwnedRenderTextureCount;
         public IReadOnlyList<Phase2PaintStamp> VisualHistory => _visualHistoryView;
         public int VisualHistoryCount => _visualHistory.Count;
         public bool IsPrepared => _isPrepared && !_isReleased && _renderer.IsInitialized;
@@ -176,7 +182,15 @@ namespace HATAGONG.Phase2
                 _interpolator.Begin(startU, startV, _interpolatedPoints);
                 _interpolator.AppendSegment(endU, endV, spacing, _interpolatedPoints);
                 int lastIndex = _interpolatedPoints.Count - 1;
-                if (lastIndex < 0 || _interpolatedPoints[lastIndex].u != endU || _interpolatedPoints[lastIndex].v != endV)
+                if (lastIndex < 0)
+                {
+                    _interpolatedPoints.Add((endU, endV));
+                }
+                else if (IsWithinEndpointTolerance(_interpolatedPoints[lastIndex], endU, endV, spacing))
+                {
+                    _interpolatedPoints[lastIndex] = (endU, endV);
+                }
+                else
                 {
                     _interpolatedPoints.Add((endU, endV));
                 }
@@ -253,34 +267,42 @@ namespace HATAGONG.Phase2
             Phase2PaintSessionState stateBefore = _session.CurrentState;
             int historyBefore = _visualHistory.Count;
 
-            if (rendererLost && !_renderer.Initialize(_renderResolution))
-            {
-                _visualRecoveryRequired = true;
-                return Phase2VisualRecoveryResult.Failed(true, true, 0, 0, Phase2OrchestrationFailureReason.VisualRecoveryFailed);
-            }
-
-            _renderer.ResetMask();
             int replayedCount = 0;
             int replayBatchCount = 0;
-            _visualBatch.Clear();
-            for (int i = 0; i < _visualHistory.Count; i++)
+            try
             {
-                _visualBatch.Add(_visualHistory[i]);
-                bool chunkReady = _visualBatch.Count == VisualReplayChunkSize || i == _visualHistory.Count - 1;
-                if (!chunkReady)
-                {
-                    continue;
-                }
-
-                Phase2PaintBatchResult replay = _renderer.ApplyStampBatch(_visualBatch);
-                replayBatchCount++;
-                replayedCount += replay.AcceptedCount;
-                if (!replay.GpuSubmitted || replay.AcceptedCount != _visualBatch.Count || replay.RejectedCount != 0)
+                if (rendererLost && !_renderer.Initialize(_renderResolution))
                 {
                     _visualRecoveryRequired = true;
-                    return Phase2VisualRecoveryResult.Failed(true, true, replayedCount, replayBatchCount, Phase2OrchestrationFailureReason.VisualRecoveryFailed);
+                    return Phase2VisualRecoveryResult.Failed(true, true, 0, 0, Phase2OrchestrationFailureReason.VisualRecoveryFailed);
                 }
+
+                _renderer.ResetMask();
                 _visualBatch.Clear();
+                for (int i = 0; i < _visualHistory.Count; i++)
+                {
+                    _visualBatch.Add(_visualHistory[i]);
+                    bool chunkReady = _visualBatch.Count == VisualReplayChunkSize || i == _visualHistory.Count - 1;
+                    if (!chunkReady)
+                    {
+                        continue;
+                    }
+
+                    Phase2PaintBatchResult replay = _renderer.ApplyStampBatch(_visualBatch);
+                    replayBatchCount++;
+                    replayedCount += replay.AcceptedCount;
+                    if (!replay.GpuSubmitted || replay.AcceptedCount != _visualBatch.Count || replay.RejectedCount != 0)
+                    {
+                        _visualRecoveryRequired = true;
+                        return Phase2VisualRecoveryResult.Failed(true, true, replayedCount, replayBatchCount, Phase2OrchestrationFailureReason.VisualRecoveryFailed);
+                    }
+                    _visualBatch.Clear();
+                }
+            }
+            catch (Exception)
+            {
+                _visualRecoveryRequired = true;
+                return Phase2VisualRecoveryResult.Failed(true, true, replayedCount, replayBatchCount, Phase2OrchestrationFailureReason.VisualRecoveryFailed);
             }
 
             bool logicUnchanged = paintedBefore == _session.Grid.PaintedCellCount &&
@@ -381,7 +403,7 @@ namespace HATAGONG.Phase2
                 RecordLogicRejection(Phase2PaintMutationRejectionReason.InvalidStamp, ref accumulator);
                 return;
             }
-            if (!IntersectsBoard(stamp))
+            if (!Phase2PaintGeometry.IsCircleIntersectingUnitBoard(stamp.CenterU, stamp.CenterV, stamp.RadiusRatio))
             {
                 RecordLogicRejection(Phase2PaintMutationRejectionReason.NoBoardIntersection, ref accumulator);
                 return;
@@ -422,10 +444,19 @@ namespace HATAGONG.Phase2
                 return;
             }
 
-            Phase2PaintBatchResult visualResult = _renderer.ApplyStampBatch(_visualBatch);
-            accumulator.VisualSubmittedCount = visualResult.GpuSubmitted ? visualResult.AcceptedCount : 0;
-            if (!visualResult.GpuSubmitted || visualResult.AcceptedCount != _visualBatch.Count || visualResult.RejectedCount != 0)
+            try
             {
+                Phase2PaintBatchResult visualResult = _renderer.ApplyStampBatch(_visualBatch);
+                accumulator.VisualSubmittedCount = visualResult.GpuSubmitted ? visualResult.AcceptedCount : 0;
+                if (!visualResult.GpuSubmitted || visualResult.AcceptedCount != _visualBatch.Count || visualResult.RejectedCount != 0)
+                {
+                    accumulator.FailureReason = Phase2OrchestrationFailureReason.VisualSubmissionFailed;
+                    _visualRecoveryRequired = true;
+                }
+            }
+            catch (Exception)
+            {
+                accumulator.VisualSubmittedCount = 0;
                 accumulator.FailureReason = Phase2OrchestrationFailureReason.VisualSubmissionFailed;
                 _visualRecoveryRequired = true;
             }
@@ -454,16 +485,15 @@ namespace HATAGONG.Phase2
                 accumulator.FailureReason);
         }
 
-        private static bool IntersectsBoard(Phase2PaintStamp stamp)
+        private static bool IsWithinEndpointTolerance((float u, float v) point, float endU, float endV, float spacing)
         {
-            double centerU = stamp.CenterU;
-            double centerV = stamp.CenterV;
-            double nearestU = Math.Max(0d, Math.Min(1d, centerU));
-            double nearestV = Math.Max(0d, Math.Min(1d, centerV));
-            double deltaU = centerU - nearestU;
-            double deltaV = centerV - nearestV;
-            double radius = stamp.RadiusRatio;
-            return deltaU * deltaU + deltaV * deltaV < radius * radius;
+            double magnitude = Math.Max(1d, Math.Max(Math.Abs(endU), Math.Abs(endV)));
+            double floatTolerance = 8d * 1.1920928955078125e-7d * magnitude;
+            double spacingTolerance = (double)spacing * 0.01d;
+            double tolerance = Math.Min(floatTolerance, spacingTolerance);
+            double deltaU = (double)point.u - endU;
+            double deltaV = (double)point.v - endV;
+            return deltaU * deltaU + deltaV * deltaV <= tolerance * tolerance;
         }
 
         private static bool IsFinite(float value)

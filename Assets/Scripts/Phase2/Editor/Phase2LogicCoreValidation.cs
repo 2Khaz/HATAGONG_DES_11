@@ -61,6 +61,15 @@ namespace HATAGONG.Phase2.Editor
             Check(result.CoverageScoreDelta >= 0, "coverage score delta non-negative");
             Check(result.TotalScoreDelta >= 0, "total score delta non-negative");
 
+            Check(!Phase2PaintGeometry.IsCircleIntersectingUnitBoard(-0.09f, -0.09f, 0.10f), "shared geometry rejects near-corner miss");
+            Check(Phase2PaintGeometry.IsCircleIntersectingUnitBoard(-0.05f, -0.05f, 0.10f), "shared geometry accepts near-corner hit");
+            var intersectionSession = new Phase2PaintSessionModel(config);
+            intersectionSession.Start();
+            var nearCornerMiss = intersectionSession.ApplyStamp(-0.09f, -0.09f, 0.10f, true, true);
+            Check(!nearCornerMiss.Accepted && nearCornerMiss.RejectionReason == Phase2PaintMutationRejectionReason.NoBoardIntersection && nearCornerMiss.TotalPaintedCellCount == 0, "session rejects near-corner miss");
+            var nearCornerHit = intersectionSession.ApplyStamp(-0.05f, -0.05f, 0.10f, true, true);
+            Check(nearCornerHit.Accepted && nearCornerHit.NewlyPaintedCellCount > 0, "session accepts near-corner hit");
+
             var clearConfig = new Phase2PaintConfig(128, 128, 0.99d, 0.085d, 0.075d, 0.065d, 0.4d, 500, 100, 150, 200, 500);
             var clearSession = new Phase2PaintSessionModel(clearConfig);
             clearSession.Start();

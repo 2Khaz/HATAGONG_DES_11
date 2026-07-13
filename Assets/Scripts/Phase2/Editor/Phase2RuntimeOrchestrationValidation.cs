@@ -31,9 +31,9 @@ namespace HATAGONG.Phase2.Editor
             try
             {
                 Check(orchestrator.Prepare(), "prepare succeeds");
-                Check(orchestrator.Session.CurrentState == Phase2PaintSessionState.Ready && orchestrator.Session.Grid.PaintedCellCount == 0 && orchestrator.Session.Score == 0, "prepare resets logic");
-                Check(orchestrator.VisualHistoryCount == 0 && orchestrator.MaskRenderer.IsInitialized, "prepare initializes visual ownership");
-                readback = ReadMask(orchestrator.MaskRenderer.MaskTexture, readback);
+                Check(orchestrator.CurrentState == Phase2PaintSessionState.Ready && orchestrator.PaintedCellCount == 0 && orchestrator.Score == 0, "prepare resets logic");
+                Check(orchestrator.VisualHistoryCount == 0 && orchestrator.RendererInitialized && orchestrator.MaskFormat == orchestrator.MaskTexture.graphicsFormat, "prepare initializes visual ownership");
+                readback = ReadMask(orchestrator.MaskTexture, readback);
                 Check(MaximumRed(readback) == 0, "prepare clears mask");
 
                 var interpolator = new Phase2StampInterpolator();
@@ -74,53 +74,66 @@ namespace HATAGONG.Phase2.Editor
                 var limitedSegment = orchestrator.RequestSegment(0f, 0f, 1f, 1f, 0.00000001f, true);
                 Check(limitedSegment.FailureReason == Phase2OrchestrationFailureReason.InputLimitExceeded && limitedSegment.InputStampCount == limitedSegment.LogicRejectedCount && limitedSegment.LogicAcceptedCount == 0 && limitedSegment.VisualSubmittedCount == 0 && limitedSegment.HistoryAddedCount == 0, "segment input limit fails explicitly");
                 Check(NoMutation(orchestrator), "segment input limit preserves all state");
-                int scoreBeforeSingle = orchestrator.Session.Score;
+                int scoreBeforeSingle = orchestrator.Score;
                 var single = orchestrator.RequestStamp(0.5f, 0.5f, 0.05f, true);
                 Check(single.InputStampCount == 1 && single.LogicAcceptedCount == 1 && single.LogicRejectedCount == 0, "single stamp logic accepted");
-                Check(single.PaintedCellDelta > 0 && orchestrator.Session.Grid.PaintedCellCount == single.PaintedCellDelta, "single stamp mutates grid once");
+                Check(single.PaintedCellDelta > 0 && orchestrator.PaintedCellCount == single.PaintedCellDelta, "single stamp mutates grid once");
                 Check(single.VisualSubmittedCount == 1 && single.HistoryAddedCount == 1 && orchestrator.VisualHistoryCount == 1, "single stamp visual and history match");
-                Check(single.ScoreDelta == orchestrator.Session.Score - scoreBeforeSingle && single.FailureReason == Phase2OrchestrationFailureReason.None, "single stamp score result exact");
-                readback = ReadMask(orchestrator.MaskRenderer.MaskTexture, readback);
+                Check(single.ScoreDelta == orchestrator.Score - scoreBeforeSingle && single.FailureReason == Phase2OrchestrationFailureReason.None, "single stamp score result exact");
+                readback = ReadMask(orchestrator.MaskTexture, readback);
                 Check(SampleRed(readback, 0.5f, 0.5f) >= 0.98f, "single stamp visible in mask");
 
-                int paintedBeforeOutside = orchestrator.Session.Grid.PaintedCellCount;
-                int scoreBeforeOutside = orchestrator.Session.Score;
+                int paintedBeforeOutside = orchestrator.PaintedCellCount;
+                int scoreBeforeOutside = orchestrator.Score;
                 int historyBeforeOutside = orchestrator.VisualHistoryCount;
                 var outside = orchestrator.RequestStamp(-0.09f, -0.09f, 0.10f, true);
                 Check(outside.LogicAcceptedCount == 0 && outside.LogicRejectedCount == 1 && outside.FirstLogicRejectionReason == Phase2PaintMutationRejectionReason.NoBoardIntersection, "circle outside board rejected");
-                Check(outside.VisualSubmittedCount == 0 && outside.HistoryAddedCount == 0 && orchestrator.Session.Grid.PaintedCellCount == paintedBeforeOutside && orchestrator.Session.Score == scoreBeforeOutside && orchestrator.VisualHistoryCount == historyBeforeOutside, "outside rejection preserves logic visual history");
+                Check(outside.VisualSubmittedCount == 0 && outside.HistoryAddedCount == 0 && orchestrator.PaintedCellCount == paintedBeforeOutside && orchestrator.Score == scoreBeforeOutside && orchestrator.VisualHistoryCount == historyBeforeOutside, "outside rejection preserves logic visual history");
 
-                int paintedBeforeDuplicate = orchestrator.Session.Grid.PaintedCellCount;
-                int scoreBeforeDuplicate = orchestrator.Session.Score;
+                var cornerIntersection = orchestrator.RequestStamp(-0.05f, -0.05f, 0.10f, true);
+                Check(cornerIntersection.LogicAcceptedCount == 1 && cornerIntersection.VisualSubmittedCount == 1 && cornerIntersection.HistoryAddedCount == 1, "orchestrator accepts true near-corner intersection");
+
+                int paintedBeforeDuplicate = orchestrator.PaintedCellCount;
+                int scoreBeforeDuplicate = orchestrator.Score;
+                int historyBeforeDuplicate = orchestrator.VisualHistoryCount;
                 var duplicate = orchestrator.RequestStamp(0.5f, 0.5f, 0.05f, true);
-                Check(duplicate.LogicAcceptedCount == 1 && duplicate.PaintedCellDelta == 0 && orchestrator.Session.Grid.PaintedCellCount == paintedBeforeDuplicate, "duplicate follows logic new-cell rule");
-                Check(duplicate.ScoreDelta == orchestrator.Session.Score - scoreBeforeDuplicate && duplicate.ScoreDelta == 0, "duplicate follows score rule");
-                Check(duplicate.VisualSubmittedCount == 1 && duplicate.HistoryAddedCount == 1 && orchestrator.VisualHistoryCount == historyBeforeOutside + 1, "accepted duplicate preserves visual replay order");
+                Check(duplicate.LogicAcceptedCount == 1 && duplicate.PaintedCellDelta == 0 && orchestrator.PaintedCellCount == paintedBeforeDuplicate, "duplicate follows logic new-cell rule");
+                Check(duplicate.ScoreDelta == orchestrator.Score - scoreBeforeDuplicate && duplicate.ScoreDelta == 0, "duplicate follows score rule");
+                Check(duplicate.VisualSubmittedCount == 1 && duplicate.HistoryAddedCount == 1 && orchestrator.VisualHistoryCount == historyBeforeDuplicate + 1, "accepted duplicate preserves visual replay order");
+
+                Check(orchestrator.Reset(), "reset before endpoint tolerance segment");
+                Check(orchestrator.StartRunning(), "endpoint tolerance session starts");
+                orchestrator.SetInputEnabled(true);
+                const float endpointRadius = 0.065f;
+                var endpointSegment = orchestrator.RequestSegment(0f, 0f, 0.25f, 0.60f, endpointRadius, true);
+                Check(endpointSegment.LogicRejectedCount == 0 && endpointSegment.HistoryAddedCount == endpointSegment.InputStampCount, "endpoint tolerance segment accepted without omission");
+                Check(orchestrator.VisualHistory[0].CenterU == 0f && orchestrator.VisualHistory[0].CenterV == 0f && orchestrator.VisualHistory[orchestrator.VisualHistoryCount - 1].CenterU == 0.25f && orchestrator.VisualHistory[orchestrator.VisualHistoryCount - 1].CenterV == 0.60f, "endpoint tolerance preserves exact start and end");
+                Check(CountExactPoint(orchestrator.VisualHistory, 0.25f, 0.60f) == 1 && LastPointDistance(orchestrator.VisualHistory) > endpointRadius * (float)orchestrator.Config.StampSpacingRatio * 0.001f, "endpoint tolerance removes microscopic duplicate");
 
                 Check(orchestrator.Reset(), "reset before segment");
                 Check(orchestrator.StartRunning(), "segment session starts");
                 orchestrator.SetInputEnabled(true);
                 int historyBeforeSegment = orchestrator.VisualHistoryCount;
-                int scoreBeforeSegment = orchestrator.Session.Score;
+                int scoreBeforeSegment = orchestrator.Score;
                 var segment = orchestrator.RequestSegment(0.1f, 0.1f, 0.4f, 0.1f, 0.05f, true);
                 Check(segment.InputStampCount > 2 && segment.InputStampCount == segment.LogicAcceptedCount + segment.LogicRejectedCount, "segment accounts for every interpolated stamp");
                 Check(segment.LogicRejectedCount == 0 && segment.VisualSubmittedCount == segment.LogicAcceptedCount && segment.HistoryAddedCount == segment.LogicAcceptedCount, "segment visual count matches logic accepted");
-                Check(segment.ScoreDelta == orchestrator.Session.Score - scoreBeforeSegment && segment.PaintedCellDelta == orchestrator.Session.Grid.PaintedCellCount, "segment aggregates score and painted delta");
+                Check(segment.ScoreDelta == orchestrator.Score - scoreBeforeSegment && segment.PaintedCellDelta == orchestrator.PaintedCellCount, "segment aggregates score and painted delta");
                 Check(orchestrator.VisualHistoryCount == historyBeforeSegment + segment.HistoryAddedCount && HistoryIsStrictlyOrdered(orchestrator.VisualHistory, historyBeforeSegment), "segment history preserves interpolation order");
                 Check(Approximately(orchestrator.VisualHistory[historyBeforeSegment].CenterU, 0.1f) && Approximately(orchestrator.VisualHistory[orchestrator.VisualHistoryCount - 1].CenterU, 0.4f), "orchestrated segment includes start and end exactly once");
 
-                readback = ReadMask(orchestrator.MaskRenderer.MaskTexture, readback);
+                readback = ReadMask(orchestrator.MaskTexture, readback);
                 Color32[] maskBeforeRecovery = readback.GetPixels32();
-                int paintedBeforeRecovery = orchestrator.Session.Grid.PaintedCellCount;
-                int scoreBeforeRecovery = orchestrator.Session.Score;
-                Phase2MilestoneFlags milestonesBeforeRecovery = orchestrator.Session.Milestones;
-                Phase2PaintSessionState stateBeforeRecovery = orchestrator.Session.CurrentState;
+                int paintedBeforeRecovery = orchestrator.PaintedCellCount;
+                int scoreBeforeRecovery = orchestrator.Score;
+                Phase2MilestoneFlags milestonesBeforeRecovery = orchestrator.Milestones;
+                Phase2PaintSessionState stateBeforeRecovery = orchestrator.CurrentState;
                 int historyBeforeRecovery = orchestrator.VisualHistoryCount;
-                orchestrator.MaskRenderer.MaskTexture.Release();
+                orchestrator.MaskTexture.Release();
                 var recovery = orchestrator.RecoverVisualMaskIfNeeded();
                 Check(recovery.WasRequired && recovery.Succeeded && recovery.ShouldCancelActiveInput && recovery.ReplayedStampCount == historyBeforeRecovery, "lost render texture replays full history");
-                Check(orchestrator.Session.Grid.PaintedCellCount == paintedBeforeRecovery && orchestrator.Session.Score == scoreBeforeRecovery && orchestrator.Session.Milestones == milestonesBeforeRecovery && orchestrator.Session.CurrentState == stateBeforeRecovery && orchestrator.VisualHistoryCount == historyBeforeRecovery, "history replay preserves logic and history");
-                readback = ReadMask(orchestrator.MaskRenderer.MaskTexture, readback);
+                Check(orchestrator.PaintedCellCount == paintedBeforeRecovery && orchestrator.Score == scoreBeforeRecovery && orchestrator.Milestones == milestonesBeforeRecovery && orchestrator.CurrentState == stateBeforeRecovery && orchestrator.VisualHistoryCount == historyBeforeRecovery, "history replay preserves logic and history");
+                readback = ReadMask(orchestrator.MaskTexture, readback);
                 Check(RedChannelsEqual(maskBeforeRecovery, readback.GetPixels32()), "history replay restores visual mask");
 
                 Check(orchestrator.Reset(), "reset before threshold");
@@ -139,9 +152,9 @@ namespace HATAGONG.Phase2.Editor
 
                 var belowThreshold = orchestrator.RequestStampBatch(cellStamps, true);
                 Check(belowThreshold.InputStampCount == 16220 && belowThreshold.LogicAcceptedCount == 16220 && belowThreshold.VisualSubmittedCount == 16220 && belowThreshold.HistoryAddedCount == 16220, "16220 batch has no omissions");
-                Check(orchestrator.Session.Grid.PaintedCellCount == 16220 && !belowThreshold.ClearThresholdReached && belowThreshold.StateAfter == Phase2PaintSessionState.Running, "16220 remains incomplete");
+                Check(orchestrator.PaintedCellCount == 16220 && !belowThreshold.ClearThresholdReached && belowThreshold.StateAfter == Phase2PaintSessionState.Running, "16220 remains incomplete");
                 Check(belowThreshold.ReachedMilestones == (Phase2MilestoneFlags.Quarter | Phase2MilestoneFlags.Half | Phase2MilestoneFlags.ThreeQuarter), "milestones each reported on first crossing");
-                Check(belowThreshold.ScoreDelta == orchestrator.Session.Score, "threshold batch score sum exact");
+                Check(belowThreshold.ScoreDelta == orchestrator.Score, "threshold batch score sum exact");
 
                 int thresholdIndex = orchestrator.Config.RequiredClearCells - 1;
                 int thresholdX = thresholdIndex % orchestrator.Config.Width;
@@ -149,14 +162,14 @@ namespace HATAGONG.Phase2.Editor
                 float thresholdU = (float)((thresholdX + 0.5d) / orchestrator.Config.Width);
                 float thresholdV = (float)((thresholdY + 0.5d) / orchestrator.Config.Height);
                 float nextU = (float)((thresholdX + 1.5d) / orchestrator.Config.Width);
-                int scoreBeforeClearSegment = orchestrator.Session.Score;
+                int scoreBeforeClearSegment = orchestrator.Score;
                 int historyBeforeClearSegment = orchestrator.VisualHistoryCount;
                 var clearSegment = orchestrator.RequestSegment(thresholdU, thresholdV, nextU, thresholdV, 0.0001f, true);
                 Check(clearSegment.InputStampCount > 1 && clearSegment.LogicAcceptedCount == 1 && clearSegment.LogicRejectedCount == clearSegment.InputStampCount - 1, "completing rejects remaining segment stamps");
                 Check(clearSegment.VisualSubmittedCount == 1 && clearSegment.HistoryAddedCount == 1 && orchestrator.VisualHistoryCount == historyBeforeClearSegment + 1, "only clear stamp enters visual history");
-                Check(clearSegment.PaintedCellDelta == 1 && orchestrator.Session.Grid.PaintedCellCount == 16221 && clearSegment.ClearThresholdReached, "16221 first clear exact");
+                Check(clearSegment.PaintedCellDelta == 1 && orchestrator.PaintedCellCount == 16221 && clearSegment.ClearThresholdReached, "16221 first clear exact");
                 Check(clearSegment.StateBefore == Phase2PaintSessionState.Running && clearSegment.StateAfter == Phase2PaintSessionState.Completing && clearSegment.FirstLogicRejectionReason == Phase2PaintMutationRejectionReason.AlreadyCompleting, "clear segment state and rejection reason");
-                Check(clearSegment.ScoreDelta == orchestrator.Session.Score - scoreBeforeClearSegment && clearSegment.ReachedMilestones == Phase2MilestoneFlags.None, "clear score exact and milestones not repeated");
+                Check(clearSegment.ScoreDelta == orchestrator.Score - scoreBeforeClearSegment && clearSegment.ReachedMilestones == Phase2MilestoneFlags.None, "clear score exact and milestones not repeated");
 
                 Check(orchestrator.Reset(), "reset before large history replay");
                 Check(orchestrator.StartRunning(), "large history session starts");
@@ -172,24 +185,24 @@ namespace HATAGONG.Phase2.Editor
                 var additionalHistoryResult = orchestrator.RequestStampBatch(additionalHistory, true);
                 Check(additionalHistoryResult.LogicAcceptedCount == additionalHistoryCount && additionalHistoryResult.HistoryAddedCount == additionalHistoryCount, "history grows beyond request limit explicitly");
                 int largeHistoryCount = orchestrator.VisualHistoryCount;
-                int largePaintedBeforeRecovery = orchestrator.Session.Grid.PaintedCellCount;
-                int largeScoreBeforeRecovery = orchestrator.Session.Score;
-                Phase2MilestoneFlags largeMilestonesBeforeRecovery = orchestrator.Session.Milestones;
-                Phase2PaintSessionState largeStateBeforeRecovery = orchestrator.Session.CurrentState;
-                orchestrator.MaskRenderer.MaskTexture.Release();
+                int largePaintedBeforeRecovery = orchestrator.PaintedCellCount;
+                int largeScoreBeforeRecovery = orchestrator.Score;
+                Phase2MilestoneFlags largeMilestonesBeforeRecovery = orchestrator.Milestones;
+                Phase2PaintSessionState largeStateBeforeRecovery = orchestrator.CurrentState;
+                orchestrator.MaskTexture.Release();
                 var chunkedRecovery = orchestrator.RecoverVisualMaskIfNeeded();
                 int expectedReplayBatches = (largeHistoryCount + Phase2PaintOrchestrator.VisualReplayChunkSize - 1) / Phase2PaintOrchestrator.VisualReplayChunkSize;
                 Check(chunkedRecovery.Succeeded && chunkedRecovery.ReplayedStampCount == largeHistoryCount && chunkedRecovery.ReplayBatchCount == expectedReplayBatches && chunkedRecovery.ReplayBatchCount > 1, "large history replay uses reusable chunks without omission");
-                Check(orchestrator.Session.Grid.PaintedCellCount == largePaintedBeforeRecovery && orchestrator.Session.Score == largeScoreBeforeRecovery && orchestrator.Session.Milestones == largeMilestonesBeforeRecovery && orchestrator.Session.CurrentState == largeStateBeforeRecovery && orchestrator.VisualHistoryCount == largeHistoryCount, "chunked replay preserves logic and history");
+                Check(orchestrator.PaintedCellCount == largePaintedBeforeRecovery && orchestrator.Score == largeScoreBeforeRecovery && orchestrator.Milestones == largeMilestonesBeforeRecovery && orchestrator.CurrentState == largeStateBeforeRecovery && orchestrator.VisualHistoryCount == largeHistoryCount, "chunked replay preserves logic and history");
 
                 Check(orchestrator.Reset(), "final reset succeeds");
-                Check(orchestrator.Session.CurrentState == Phase2PaintSessionState.Ready && orchestrator.Session.Grid.PaintedCellCount == 0 && orchestrator.Session.Score == 0 && orchestrator.Session.Milestones == Phase2MilestoneFlags.None, "reset clears logic and state");
+                Check(orchestrator.CurrentState == Phase2PaintSessionState.Ready && orchestrator.PaintedCellCount == 0 && orchestrator.Score == 0 && orchestrator.Milestones == Phase2MilestoneFlags.None, "reset clears logic and state");
                 Check(orchestrator.VisualHistoryCount == 0 && !orchestrator.InputEnabled, "reset clears history and input");
-                readback = ReadMask(orchestrator.MaskRenderer.MaskTexture, readback);
+                readback = ReadMask(orchestrator.MaskTexture, readback);
                 Check(MaximumRed(readback) == 0, "reset clears visual mask");
 
                 orchestrator.Release();
-                Check(!orchestrator.IsPrepared && orchestrator.MaskRenderer.OwnedRenderTextureCount == 0 && orchestrator.VisualHistoryCount == 0, "release clears GPU ownership and history");
+                Check(!orchestrator.IsPrepared && orchestrator.OwnedRenderTextureCount == 0 && orchestrator.VisualHistoryCount == 0, "release clears GPU ownership and history");
                 Debug.Log($"[Phase2Orchestration][Test] result={passed}/{total}, failures=0");
             }
             finally
@@ -204,9 +217,9 @@ namespace HATAGONG.Phase2.Editor
 
         private static bool NoMutation(Phase2PaintOrchestrator orchestrator)
         {
-            return orchestrator.Session.Grid.PaintedCellCount == 0 &&
-                   orchestrator.Session.Score == 0 &&
-                   orchestrator.Session.Milestones == Phase2MilestoneFlags.None &&
+            return orchestrator.PaintedCellCount == 0 &&
+                   orchestrator.Score == 0 &&
+                   orchestrator.Milestones == Phase2MilestoneFlags.None &&
                    orchestrator.VisualHistoryCount == 0;
         }
 
@@ -241,6 +254,32 @@ namespace HATAGONG.Phase2.Editor
         private static bool Approximately(float a, float b)
         {
             return Math.Abs(a - b) <= 0.000001f;
+        }
+
+        private static int CountExactPoint(IReadOnlyList<Phase2PaintStamp> history, float u, float v)
+        {
+            int count = 0;
+            for (int i = 0; i < history.Count; i++)
+            {
+                if (history[i].CenterU == u && history[i].CenterV == v)
+                {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        private static float LastPointDistance(IReadOnlyList<Phase2PaintStamp> history)
+        {
+            if (history.Count < 2)
+            {
+                return 0f;
+            }
+            Phase2PaintStamp previous = history[history.Count - 2];
+            Phase2PaintStamp last = history[history.Count - 1];
+            double deltaU = (double)last.CenterU - previous.CenterU;
+            double deltaV = (double)last.CenterV - previous.CenterV;
+            return (float)Math.Sqrt(deltaU * deltaU + deltaV * deltaV);
         }
 
         private static Texture2D ReadMask(RenderTexture source, Texture2D existing)

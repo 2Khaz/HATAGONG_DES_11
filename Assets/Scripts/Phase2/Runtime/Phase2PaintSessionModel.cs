@@ -74,7 +74,7 @@ namespace HATAGONG.Phase2
                 return Phase2StampResult.Rejected(Phase2PaintMutationRejectionReason.InvalidStamp, stateBefore, stateBefore, 0, Grid.PaintedCellCount, Config.TotalCellCount, CalculateCoverage(Grid.PaintedCellCount), CalculateCoverage(Grid.PaintedCellCount), 0, 0, 0, 0, _milestones, false);
             }
 
-            if (!IsBoardIntersection(centerU, centerV, radiusRatio))
+            if (!Phase2PaintGeometry.IsCircleIntersectingUnitBoard(centerU, centerV, radiusRatio))
             {
                 return Phase2StampResult.Rejected(Phase2PaintMutationRejectionReason.NoBoardIntersection, stateBefore, stateBefore, 0, Grid.PaintedCellCount, Config.TotalCellCount, CalculateCoverage(Grid.PaintedCellCount), CalculateCoverage(Grid.PaintedCellCount), 0, 0, 0, 0, _milestones, false);
             }
@@ -122,15 +122,6 @@ namespace HATAGONG.Phase2
                 clearThresholdReached: clearThresholdReached,
                 stateBefore: stateBefore,
                 stateAfter: CurrentState);
-        }
-
-        private bool IsBoardIntersection(float centerU, float centerV, float radiusRatio)
-        {
-            double minU = centerU - radiusRatio;
-            double maxU = centerU + radiusRatio;
-            double minV = centerV - radiusRatio;
-            double maxV = centerV + radiusRatio;
-            return !(maxU < 0d || minU > 1d || maxV < 0d || minV > 1d);
         }
 
         private double CalculateCoverage(int paintedCellCount)
