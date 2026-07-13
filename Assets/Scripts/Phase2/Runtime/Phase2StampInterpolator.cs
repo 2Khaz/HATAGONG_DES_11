@@ -8,7 +8,7 @@ namespace HATAGONG.Phase2
         private bool _hasPreviousPoint;
         private float _lastInputU;
         private float _lastInputV;
-        private float _remainingDistance;
+        private double _remainingDistance;
 
         public int Begin(float u, float v, List<(float u, float v)> outputBuffer)
         {
@@ -18,14 +18,15 @@ namespace HATAGONG.Phase2
             _hasPreviousPoint = true;
             _lastInputU = u;
             _lastInputV = v;
-            _remainingDistance = 0f;
+            _remainingDistance = 0d;
             return 1;
         }
 
         public int AppendSegment(float nextU, float nextV, float spacing, List<(float u, float v)> outputBuffer)
         {
             if (outputBuffer == null) throw new ArgumentNullException(nameof(outputBuffer));
-            if (float.IsNaN(nextU) || float.IsNaN(nextV) || float.IsInfinity(nextU) || float.IsInfinity(nextV) || spacing <= 0f)
+            if (float.IsNaN(nextU) || float.IsNaN(nextV) || float.IsInfinity(nextU) || float.IsInfinity(nextV) ||
+                float.IsNaN(spacing) || float.IsInfinity(spacing) || spacing <= 0f)
             {
                 return 0;
             }
@@ -35,29 +36,29 @@ namespace HATAGONG.Phase2
                 return Begin(nextU, nextV, outputBuffer);
             }
 
-            float dx = nextU - _lastInputU;
-            float dy = nextV - _lastInputV;
-            float segmentLength = (float)Math.Sqrt(dx * dx + dy * dy);
-            if (segmentLength <= 0f)
+            double dx = (double)nextU - _lastInputU;
+            double dy = (double)nextV - _lastInputV;
+            double segmentLength = Math.Sqrt(dx * dx + dy * dy);
+            if (segmentLength <= 0d)
             {
                 _lastInputU = nextU;
                 _lastInputV = nextV;
                 return 0;
             }
 
-            float totalDistance = _remainingDistance + segmentLength;
             int generated = 0;
-            while (totalDistance >= spacing)
+            double distanceToNextStamp = spacing - _remainingDistance;
+            double lastGeneratedDistance = -1d;
+            while (distanceToNextStamp <= segmentLength)
             {
-                float advance = spacing - _remainingDistance;
-                float t = advance / segmentLength;
-                outputBuffer.Add((_lastInputU + dx * t, _lastInputV + dy * t));
+                double t = distanceToNextStamp / segmentLength;
+                outputBuffer.Add(((float)(_lastInputU + dx * t), (float)(_lastInputV + dy * t)));
                 generated++;
-                totalDistance -= spacing;
-                _remainingDistance = 0f;
+                lastGeneratedDistance = distanceToNextStamp;
+                distanceToNextStamp += spacing;
             }
 
-            _remainingDistance = totalDistance;
+            _remainingDistance = generated > 0 ? segmentLength - lastGeneratedDistance : _remainingDistance + segmentLength;
             _lastInputU = nextU;
             _lastInputV = nextV;
             return generated;
@@ -66,7 +67,7 @@ namespace HATAGONG.Phase2
         public void End()
         {
             _hasPreviousPoint = false;
-            _remainingDistance = 0f;
+            _remainingDistance = 0d;
         }
     }
 }
