@@ -4,6 +4,7 @@ using HATAGONG.Phase2;
 using HATAGONG.Phase2.Rendering;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
+using UnityEngine.UI;
 
 namespace HATAGONG.GameFlow
 {
@@ -13,6 +14,8 @@ namespace HATAGONG.GameFlow
         [SerializeField] private Phase2MaskPresenter maskPresenter;
         [SerializeField] private Phase2PointerInputController pointerInput;
         [SerializeField] private GameScoreController scoreController;
+        [SerializeField] private Image deckPanel;
+        [SerializeField] private Sprite deckSprite;
 
         private Phase2PaintOrchestrator _orchestrator;
         private float _brushRadiusRatio;
@@ -50,7 +53,7 @@ namespace HATAGONG.GameFlow
             if (gameObject.activeSelf) gameObject.SetActive(false);
             LastFailureReason = string.Empty;
 
-            if (!context.IsValid || !maskPresenter || !pointerInput || !scoreController ||
+            if (!ApplyDeckSprite() || !context.IsValid || !maskPresenter || !pointerInput || !scoreController ||
                 !TryGetPreset(context.Difficulty, out Phase2PaintConfig config, out float radius))
             {
                 return FailPrepare("Invalid context or required Phase 2 scene reference.");
@@ -89,7 +92,7 @@ namespace HATAGONG.GameFlow
         public bool Activate()
         {
             SetInputEnabled(false);
-            if (!IsPrepared || _orchestrator == null || !maskPresenter || !pointerInput)
+            if (!ApplyDeckSprite() || !IsPrepared || _orchestrator == null || !maskPresenter || !pointerInput)
             {
                 LastFailureReason = "Phase 2 is not prepared.";
                 return false;
@@ -274,6 +277,15 @@ namespace HATAGONG.GameFlow
         {
             _orchestrator?.Dispose();
             _orchestrator = null;
+        }
+
+        private bool ApplyDeckSprite()
+        {
+            if (!deckPanel && !deckSprite) return true;
+            if (!deckPanel || !deckSprite) return false;
+            deckPanel.sprite = deckSprite;
+            deckPanel.preserveAspect = true;
+            return true;
         }
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using HATAGONG.Phase1;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace HATAGONG.GameFlow
 {
@@ -8,6 +9,8 @@ namespace HATAGONG.GameFlow
     {
         [SerializeField] private Phase1BoardController board;
         [SerializeField] private Phase1InputController input;
+        [SerializeField] private Image deckPanel;
+        [SerializeField] private Sprite deckSprite;
 
         private bool _exitReadyRaised;
         private Phase1BoardController _subscribedBoard;
@@ -36,7 +39,7 @@ namespace HATAGONG.GameFlow
         public bool Prepare(GameRunContext context)
         {
             SetInputEnabled(false);
-            if (!TryConvertDifficulty(context.Difficulty, out Phase1Difficulty phase1Difficulty) || !board)
+            if (!ApplyDeckSprite() || !TryConvertDifficulty(context.Difficulty, out Phase1Difficulty phase1Difficulty) || !board)
             {
                 return false;
             }
@@ -57,7 +60,7 @@ namespace HATAGONG.GameFlow
         public bool Activate()
         {
             SetInputEnabled(false);
-            if (!IsPrepared || !board || !board.IsPrepared || !EnsureSubscribed())
+            if (!ApplyDeckSprite() || !IsPrepared || !board || !board.IsPrepared || !EnsureSubscribed())
             {
                 return false;
             }
@@ -137,6 +140,15 @@ namespace HATAGONG.GameFlow
             _subscribedBoard.Phase1ClearConditionReached -= OnClearConditionReached;
             _subscribedBoard.Phase1Cleared -= OnFinalized;
             _subscribedBoard = null;
+        }
+
+        private bool ApplyDeckSprite()
+        {
+            if (!deckPanel && !deckSprite) return true;
+            if (!deckPanel || !deckSprite) return false;
+            deckPanel.sprite = deckSprite;
+            deckPanel.preserveAspect = true;
+            return true;
         }
     }
 }
