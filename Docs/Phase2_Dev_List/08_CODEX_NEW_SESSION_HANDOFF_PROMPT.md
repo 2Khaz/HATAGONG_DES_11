@@ -1,7 +1,6 @@
 # 새 PC·새 대화용 Codex 초기 인수인계 프롬프트
 
-아래 블록을 새 Codex 세션에 그대로 복사한다.  
-`<PHASE2_COMPLETION_COMMIT>`만 실제 Commit ID로 교체한다.
+아래 블록은 현재 완료 Commit과 문서 정본 경로가 반영된 상태이므로 새 Codex 세션에 그대로 복사한다.
 
 ```text
 HATAGONG_DES_11 Unity 프로젝트 작업을 이어간다.
@@ -21,18 +20,24 @@ URP:
 Expected branch:
 Sub_Phase2LogicCore
 
-Phase 2 completion commit:
-<PHASE2_COMPLETION_COMMIT>
+Expected Phase 2 completion commit:
+8d658ed1f2719d3716b8372610ec52cd1ba765b4
+
+Expected latest commit title:
+[ADD]260713 7번째 커밋_이정현
+
+Handoff canonical path:
+Docs/Phase2_Dev_List/
 
 작업 전에 다음 문서를 순서대로 읽어라.
 
-1. Docs/Handoff/Phase2_2026-07-13/00_HANDOFF_INDEX.md
-2. Docs/Handoff/Phase2_2026-07-13/01_PHASE2_GPT_FULL_SPEC.md
-3. Docs/Handoff/Phase2_2026-07-13/06_VALIDATION_EVIDENCE_AND_REGRESSION_RISKS.md
+1. Docs/Phase2_Dev_List/00_HANDOFF_INDEX.md
+2. Docs/Phase2_Dev_List/01_PHASE2_GPT_FULL_SPEC.md
+3. Docs/Phase2_Dev_List/06_VALIDATION_EVIDENCE_AND_REGRESSION_RISKS.md
 4. 현재 작업 목적에 따라:
-   - 03_PHASE2_DEFERRED_INGAME_WORK.md
-   - 04_PHASE3_PREIMPLEMENTATION_PLAN.md
-   - 05_FULL_GAME_AUTOMATED_VALIDATION_PLAN.md
+   - Docs/Phase2_Dev_List/03_PHASE2_DEFERRED_INGAME_WORK.md
+   - Docs/Phase2_Dev_List/04_PHASE3_PREIMPLEMENTATION_PLAN.md
+   - Docs/Phase2_Dev_List/05_FULL_GAME_AUTOMATED_VALIDATION_PLAN.md
 
 현재 Phase 2 기준선:
 

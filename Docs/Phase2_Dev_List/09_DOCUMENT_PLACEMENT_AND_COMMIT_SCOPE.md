@@ -15,7 +15,25 @@ Phase 2 Stage 5B 코드의 최종 감사에서는 다음만 존재했다.
 
 ---
 
-## 2. 권장 저장 위치
+## 2. 실제 적용 결과 — 현재 정본
+
+- 실제 문서 경로: `Docs/Phase2_Dev_List/`
+- Phase 2 기능 파일: 18개
+- 인수인계 Markdown: 10개
+- 총 Commit 포함 파일: 28개
+- 기능과 문서를 분리하지 않고 동일 Commit으로 처리
+- 적용 Commit: `8d658ed1f2719d3716b8372610ec52cd1ba765b4`
+- 실제 Commit 제목: `[ADD]260713 7번째 커밋_이정현`
+- `MANIFEST.json`: 저장소에 포함하지 않음
+- ZIP: 저장소에 포함하지 않음
+
+이번 프로젝트에서는 사용자가 기능과 문서를 하나의 Commit으로 처리했다. `Docs/Phase2_Dev_List/`가 현재 인수인계 문서의 정본이며, 향후 작업자는 문서를 다른 경로로 이동하거나 동일 문서를 중복 생성하지 않는다.
+
+---
+
+## 3. 당시 권장 저장 위치 — 미적용
+
+다음 경로는 문서 패키지를 저장소에 넣기 전에 제시한 일반적인 권장안이며 실제 적용 경로가 아니다. 현재 정본 경로로 사용하지 않는다.
 
 저장소 루트:
 
@@ -46,7 +64,9 @@ Docs/
 
 ---
 
-## 3. 가장 안전한 커밋 순서
+## 4. 당시 권장 커밋 순서 — 일반 권장안
+
+다음 두 Commit 분리 방식은 일반적인 안전 권장안으로 유지한다. 이번 프로젝트의 실제 적용 결과는 위 2절과 같이 하나의 Commit이다.
 
 ### Commit 1 — 검수 완료된 Phase 2 코드
 기존 18개 파일만 포함한다.
@@ -73,27 +93,29 @@ docs: add Phase 2 and Phase 3 handoff package
 
 ---
 
-## 4. 문서 복사 후 갱신할 값
+## 5. 문서 복사 후 갱신할 값 — 적용 완료
 
 ### `00_HANDOFF_INDEX.md`
-다음 값을 실제 Commit으로 교체:
+현재 실제 Commit 반영값:
 
 ```text
-Phase 2 완료 커밋 ID: <실제 SHA>
+Phase 2 완료 커밋 ID: 8d658ed1f2719d3716b8372610ec52cd1ba765b4
 ```
 
 ### `08_CODEX_NEW_SESSION_HANDOFF_PROMPT.md`
-다음 Placeholder 교체:
+현재 실제 Commit 반영값:
 
 ```text
-<PHASE2_COMPLETION_COMMIT>
+8d658ed1f2719d3716b8372610ec52cd1ba765b4
 ```
 
 Branch를 main에 병합한 뒤 문서를 쓰는 경우 Expected branch도 실제 운영 정책에 맞춰 수정한다.
 
 ---
 
-## 5. 문서 커밋 전 읽기 전용 검사
+## 6. 당시 문서 커밋 전 읽기 전용 검사
+
+다음 명령은 미적용 권장 경로를 전제로 작성된 역사적 예시다. 현재 문서 검사에는 `Docs/Phase2_Dev_List/`를 사용한다.
 
 ```bash
 git status --short --untracked-files=all
@@ -120,7 +142,7 @@ git diff --cached --stat
 
 ---
 
-## 6. ZIP 처리
+## 7. ZIP 처리
 
 다운로드 ZIP은 전달 편의용이다.
 
@@ -133,7 +155,7 @@ ZIP을 Commit하면 같은 내용이 중복되고 Diff 검토가 어려워진다
 
 ---
 
-## 7. 문서 유지 관리
+## 8. 문서 유지 관리
 
 Phase 3 설계 확정:
 - `04_PHASE3_PREIMPLEMENTATION_PLAN.md` 업데이트

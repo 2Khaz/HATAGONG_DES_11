@@ -193,12 +193,14 @@ Phase 3 등록 후에는 이 오류가 사라져야 한다.
 
 ---
 
-## 7. 커밋 전 최종 감사 결과
+## 7. Commit 생성 직전 역사적 최종 감사 Snapshot
 
-작성 시점:
+다음 내용은 Commit `8d658ed1f2719d3716b8372610ec52cd1ba765b4` 생성 직전의 역사적 Snapshot이며, 현재 Working Tree 상태를 뜻하지 않는다.
+
+당시 작성 시점:
 
 - Branch: `Sub_Phase2LogicCore`
-- HEAD: `18ceb1bd4ef84b9274f48fe1a3f280e932c4e648`
+- 이전 기준 HEAD: `18ceb1bd4ef84b9274f48fe1a3f280e932c4e648`
 - Stage된 파일: 0
 - Tracked modified: 2
 - Untracked: 16
@@ -210,4 +212,12 @@ Phase 3 등록 후에는 이 오류가 사라져야 한다.
 - Assembly-CSharp: Warning 0 / Error 0
 - Assembly-CSharp-Editor: Warning 0 / Error 0
 
-이 문서 패키지는 위 18개 파일 감사 후 외부에서 생성됐다. 저장소에 추가하면 변경 파일 수가 달라진다.
+이 문서 패키지는 위 18개 파일 감사 후 외부에서 생성됐으며, 이후 기능 파일과 함께 저장소에 반영됐다.
+
+### 실제 적용 결과 및 인수 시점
+
+- Phase 2 기능 파일 18개와 인수인계 Markdown 10개가 동일 Commit에 포함됨
+- 적용 Commit: `8d658ed1f2719d3716b8372610ec52cd1ba765b4`
+- 실제 Commit 제목: `[ADD]260713 7번째 커밋_이정현`
+- 현재 Branch: `Sub_Phase2LogicCore`
+- 인수 시점 Working Tree: clean
