@@ -1,2 +1,21 @@
 using System;
-namespace HATAGONG.GameFlow { public interface IGamePhase { bool IsRunning{get;} bool IsCleared{get;} event Action PhaseCleared; void StartPhase(); void StopPhase(); void SetInputEnabled(bool enabled); } }
+
+namespace HATAGONG.GameFlow
+{
+    public interface IGamePhase
+    {
+        GamePhaseId PhaseId { get; }
+        bool IsPrepared { get; }
+        bool IsRunning { get; }
+        bool IsCleared { get; }
+        bool IsExitReady { get; }
+
+        event Action PhaseCleared;
+        event Action PhaseExitReady;
+
+        bool Prepare(GameRunContext context);
+        bool Activate();
+        void Deactivate();
+        void SetInputEnabled(bool enabled);
+    }
+}

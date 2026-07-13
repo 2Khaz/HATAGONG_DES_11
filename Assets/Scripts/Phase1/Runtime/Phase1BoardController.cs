@@ -17,22 +17,31 @@ namespace HATAGONG.Phase1
         [SerializeField] private bool useFixedSeed; [SerializeField] private int fixedSeed=12345; [SerializeField] private bool ignoreSessionHistoryForDebug;
         [SerializeField] private bool runSmokeTestOnStart;
         [SerializeField] private int currentSeed; [SerializeField] private string currentBagId,currentLayoutHash,currentVariantHash;
-        private readonly Phase1ShuffleBag shuffle=new();private readonly Dictionary<Phase1Difficulty,Queue<string>> hashes=new();private readonly List<Phase1TileView> views=new();private Phase1BoardState state;private int remaining,totalHits;private float started;private bool cleared,smokeStarted;
-        public event Action<Phase1BoardState> Phase1Cleared;public Phase1HitResult LastHitResult{get;private set;}
-        private void Start(){if(config){config.EnsureDefaults();generateOnStart=config.GenerateOnStart&&generateOnStart;}if(generateOnStart)GenerateBoard();if(runSmokeTestOnStart&&state!=null)RunSmokeTestImmediate();}
+        private readonly Phase1ShuffleBag shuffle=new();private readonly Dictionary<Phase1Difficulty,Queue<string>> hashes=new();private readonly List<Phase1TileView> views=new();private Phase1BoardState state;private int remaining,totalHits;private float started;private bool cleared,smokeStarted,prepared;
+        public event Action Phase1ClearConditionReached;public event Action<Phase1BoardState> Phase1Cleared;public Phase1HitResult LastHitResult{get;private set;}public bool IsPrepared=>prepared&&state!=null;
+        private void Start(){if(config){config.EnsureDefaults();generateOnStart=config.GenerateOnStart&&generateOnStart;}if(generateOnStart&&!IsPrepared)Prepare(difficulty);if(runSmokeTestOnStart&&state!=null)RunSmokeTestImmediate();}
         private void Update(){if(runSmokeTestOnStart&&state!=null&&!smokeStarted){smokeStarted=true;StartCoroutine(RunSmokeTest());}}
-        [ContextMenu("Generate Board")] public void GenerateBoard(){Generate();}
-        [ContextMenu("Regenerate Board")] public void RegenerateBoard(){Generate();}
-        private void Generate()
+        [ContextMenu("Generate Board")] public void GenerateBoard(){if(!IsPrepared)Prepare(difficulty);}
+        [ContextMenu("Regenerate Board")] public void RegenerateBoard(){ClearPreparedBoard();Prepare(difficulty);}
+        public bool Prepare(Phase1Difficulty targetDifficulty)
         {
-            if(!config||!fieldRoot||!tileContainer||!tilePrefab||!inputController||!scoreController||!feedbackController){Debug.LogError("[Phase1] Required Inspector references are missing.");return;}
-            config.EnsureDefaults();if(!config.ValidateAllBags())return;var seed=useFixedSeed?fixedSeed:Environment.TickCount;var random=new System.Random(seed);var generator=new Phase1BoardGenerator(config);Phase1BoardState next=null;
-            if(useFixedSeed&&ignoreSessionHistoryForDebug&&state!=null){var replayBag=config.Bags.FirstOrDefault(x=>x.Id==state.BagId);if(replayBag!=null&&generator.TryGenerate(difficulty,replayBag,fixedSeed,true,out var replay)){Commit(replay);return;}Debug.LogError($"[Phase1] Fixed-seed debug replay failed for bag={state.BagId}, seed={fixedSeed}.");return;}
+            inputController?.SetInputEnabled(false);
+            if(IsPrepared)return state.Difficulty==targetDifficulty;
+            difficulty=targetDifficulty;
+            if(Generate()){prepared=true;return true;}
+            ClearPreparedBoard();
+            return false;
+        }
+        private bool Generate()
+        {
+            if(!config||!fieldRoot||!tileContainer||!tilePrefab||!inputController||!scoreController||!feedbackController){Debug.LogError("[Phase1] Required Inspector references are missing.");return false;}
+            config.EnsureDefaults();if(!config.ValidateAllBags())return false;var seed=useFixedSeed?fixedSeed:Environment.TickCount;var random=new System.Random(seed);var generator=new Phase1BoardGenerator(config);Phase1BoardState next=null;
+            if(useFixedSeed&&ignoreSessionHistoryForDebug&&state!=null){var replayBag=config.Bags.FirstOrDefault(x=>x.Id==state.BagId);if(replayBag!=null&&generator.TryGenerate(difficulty,replayBag,fixedSeed,true,out var replay)){Commit(replay);return true;}Debug.LogError($"[Phase1] Fixed-seed debug replay failed for bag={state.BagId}, seed={fixedSeed}.");return false;}
             var bags=shuffle.OrderedCandidates(difficulty,config.Bags,random).Select(id=>config.Bags.First(x=>x.Id==id)).ToList();
             for(int b=0;b<bags.Count&&next==null;b++){int attempts=b==0?config.CurrentBagAttempts:config.AlternativeBagAttempts;for(int a=0;a<attempts;a++){int attemptSeed=seed+(b*1000)+a;if(generator.TryGenerate(difficulty,bags[b],attemptSeed,true,out var candidate)&&AcceptHash(candidate.LayoutHash)){next=candidate;break;}}}
             if(next==null)foreach(var bag in bags){for(int a=0;a<config.AlternativeBagAttempts;a++){int attemptSeed=seed+100000+a;if(generator.TryGenerate(difficulty,bag,attemptSeed,false,out var candidate)&&AcceptHash(candidate.LayoutHash)){next=candidate;break;}}if(next!=null)break;}
-            if(next==null){Debug.LogError($"[Phase1] Generation failed. Bags tried: {string.Join(",",bags.Select(x=>x.Id))}");return;}
-            Commit(next);shuffle.MarkSuccessful(difficulty,next.BagId);RememberHash(next.LayoutHash);
+            if(next==null){Debug.LogError($"[Phase1] Generation failed. Bags tried: {string.Join(",",bags.Select(x=>x.Id))}");return false;}
+            Commit(next);shuffle.MarkSuccessful(difficulty,next.BagId);RememberHash(next.LayoutHash);return true;
         }
         private bool AcceptHash(string hash)=>ignoreSessionHistoryForDebug||!hashes.TryGetValue(difficulty,out var q)||!q.Contains(hash);
         private void RememberHash(string hash){if(ignoreSessionHistoryForDebug)return;if(!hashes.TryGetValue(difficulty,out var q))hashes[difficulty]=q=new Queue<string>();q.Enqueue(hash);while(q.Count>config.HashCapacity(difficulty))q.Dequeue();}
@@ -40,11 +49,12 @@ namespace HATAGONG.Phase1
             foreach(var p in next.Tiles){var v=Instantiate(tilePrefab,tileContainer);v.name=$"Phase1_Tile_{p.TileId:00}_{p.Shape}";var rt=(RectTransform)v.transform;rt.anchorMin=rt.anchorMax=rt.pivot=new Vector2(0,1);rt.anchoredPosition=new Vector2(p.GridX*cell,-p.GridY*cell);rt.sizeDelta=new Vector2(p.GridWidth*cell,p.GridHeight*cell);rt.localScale=Vector3.one;rt.localRotation=Quaternion.identity;v.Initialize(p,inputController,config);views.Add(v);}Debug.Log($"[Phase1] Generated difficulty={difficulty}, bag={currentBagId}, seed={currentSeed}, cell={cell}, layoutHash={currentLayoutHash}, variantHash={currentVariantHash}, tiles={remaining}, baseHp={next.Tiles.Sum(x=>x.BaseHp)}, modifier={next.Tiles.Sum(x=>x.GradeHpModifier)}, finalHp={next.Tiles.Sum(x=>x.MaxHp)}");}
         public bool TryHit(Phase1TileView tile)=>TryHitDetailed(tile)==Phase1HitResult.Succeeded;
         public Phase1HitResult TryHitDetailed(Phase1TileView tile){if(!sessionController||!sessionController.CanAcceptGameplayInput||!inputController||!inputController.InputEnabled)return LastHitResult=Phase1HitResult.StateBlocked;if(!tile)return LastHitResult=Phase1HitResult.InvalidTarget;if(tile.IsDestroyed)return LastHitResult=Phase1HitResult.AlreadyDestroyed;if(cleared||!tile.ApplyDamage(out var changed,out var destroyed))return LastHitResult=Phase1HitResult.DamageRejected;totalHits++;scoreController.Add(config.HitScore,ScoreReason.Hit);feedbackController.Play(tile.Role,tile.Grade,changed,destroyed);if(destroyed){tile.DestroyVisual();remaining--;scoreController.Add(config.DestroyScore,ScoreReason.Destroy);if(remaining==0)Clear();}return LastHitResult=Phase1HitResult.Succeeded;}
-        private void Clear(){if(cleared)return;cleared=true;scoreController.Add(config.ClearScore,ScoreReason.PhaseClear);Debug.Log($"[Phase1] Phase1Cleared bag={currentBagId}, hits={totalHits}, score={scoreController.Score}, elapsed={Time.unscaledTime-started:F3}, hash={currentLayoutHash}");Phase1Cleared?.Invoke(state);}
+        private void Clear(){if(cleared)return;cleared=true;Phase1ClearConditionReached?.Invoke();scoreController.Add(config.ClearScore,ScoreReason.PhaseClear);Debug.Log($"[Phase1] Phase1Cleared bag={currentBagId}, hits={totalHits}, score={scoreController.Score}, elapsed={Time.unscaledTime-started:F3}, hash={currentLayoutHash}");Phase1Cleared?.Invoke(state);}
         [ContextMenu("Validate All Bags")] public void ValidateAllBags(){if(config)config.ValidateAllBags();}
         [ContextMenu("Print Current Layout")] public void PrintCurrentLayout(){if(state==null){Debug.Log("[Phase1] No board.");return;}Debug.Log($"[Phase1] difficulty={state.Difficulty}, bag={state.BagId}, seed={state.Seed}, layout={state.LayoutHash}, variant={state.VariantHash}, minHp={config.MinimumFinalTileHp}, baseHp={state.Tiles.Sum(x=>x.BaseHp)}, modifier={state.Tiles.Sum(x=>x.GradeHpModifier)}, finalHp={state.Tiles.Sum(x=>x.MaxHp)}, violations={state.Tiles.Count(x=>!x.MinimumHpValid)}, grades={string.Join(",",state.Tiles.GroupBy(x=>x.Grade).Select(g=>$"{g.Key}:{g.Count()}"))}");foreach(var p in state.Tiles)Debug.Log($"[Phase1] tile={p.TileId}, pos=({p.GridX},{p.GridY}), size=({p.GridWidth},{p.GridHeight}), shape={p.Shape}, grade={p.Grade}, baseHp={p.BaseHp}, modifier={p.GradeHpModifier}, finalHp={p.MaxHp}, valid={p.MinimumHpValid}, visual={p.VisualSetId}, sprite={p.UsedSpriteName}, fallback={p.VisualFallbackUsed}");}
         [ContextMenu("Damage First Alive Tile")] public void DamageFirstAliveTile(){var v=views.FirstOrDefault(x=>x&&!x.IsDestroyed);if(v)TryHit(v);}
-        [ContextMenu("Destroy Current Board")] public void DestroyCurrentBoard(){foreach(var v in views)if(v)Destroy(v.gameObject);views.Clear();remaining=0;state=null;}
+        [ContextMenu("Destroy Current Board")] public void DestroyCurrentBoard(){ClearPreparedBoard();}
+        private void ClearPreparedBoard(){foreach(var v in views)if(v)Destroy(v.gameObject);views.Clear();remaining=0;state=null;prepared=false;cleared=false;currentSeed=0;currentBagId=string.Empty;currentLayoutHash=string.Empty;currentVariantHash=string.Empty;inputController?.SetInputEnabled(false);}
         private IEnumerator RunSmokeTest()
         {
             smokeStarted=true;

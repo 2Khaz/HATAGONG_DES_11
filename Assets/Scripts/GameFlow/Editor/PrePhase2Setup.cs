@@ -27,8 +27,8 @@ namespace HATAGONG.GameFlowEditor
             Set(phasePresenter,("phaseText",phaseText),("phaseDescription",phaseDialog));SetArray(phasePresenter,"dots",dots);SetStringArray(phasePresenter,"descriptions",new[]{phaseDialog?phaseDialog.text:string.Empty,string.Empty,string.Empty});SetColor(phasePresenter,"activeColor",new Color(.1f,.45f,1f,1f));SetColor(phasePresenter,"inactiveColor",Color.white);
             var transitionRoot=EnsureOverlayRoot(canvas,phaseText.font);
             var startOverlay=transitionRoot.transform.Find("StartOverlay").GetComponent<GameStartOverlay>();var phaseOverlay=transitionRoot.transform.Find("PhaseTransitionOverlay").GetComponent<PhaseTransitionOverlay>();
-            Set(session,("timer",timer),("score",score),("startOverlay",startOverlay),("phase1",adapter));Set(transition,("session",session),("overlay",phaseOverlay),("phaseHud",phasePresenter));
-            SetBool(timer,"startOnStart",false);
+            Set(session,("timer",timer),("score",score),("startOverlay",startOverlay),("transition",transition));SetArray(session,"phases",new Object[]{adapter});SetInt(session,"difficulty",(int)GameDifficulty.Hard);SetInt(session,"initialPhase",(int)GamePhaseId.Phase1);Set(transition,("overlay",phaseOverlay),("phaseHud",phasePresenter));
+            SetBool(timer,"startOnStart",false);SetBool(board,"generateOnStart",false);
             phasePresenter.SetPhase(GamePhaseId.Phase1);requestPresenter.Present(RequestType.Normal);
             EditorUtility.SetDirty(general);EditorUtility.SetDirty(field);EditorSceneManager.MarkSceneDirty(canvas.scene);EditorSceneManager.SaveScene(canvas.scene);Debug.Log("[GameFlow] Pre-Phase2 framework setup completed.");
         }
@@ -57,6 +57,7 @@ namespace HATAGONG.GameFlowEditor
         private static void SetStringArray(Component target,string name,string[] values){var so=new SerializedObject(target);var p=so.FindProperty(name);p.arraySize=values.Length;for(int i=0;i<values.Length;i++)p.GetArrayElementAtIndex(i).stringValue=values[i];so.ApplyModifiedProperties();}
         private static void SetColor(Component target,string name,Color value){var so=new SerializedObject(target);so.FindProperty(name).colorValue=value;so.ApplyModifiedProperties();}
         private static void SetBool(Component target,string name,bool value){var so=new SerializedObject(target);so.FindProperty(name).boolValue=value;so.ApplyModifiedProperties();}
+        private static void SetInt(Component target,string name,int value){var so=new SerializedObject(target);so.FindProperty(name).intValue=value;so.ApplyModifiedProperties();}
         private static void SetFloat(Component target,string name,float value){var so=new SerializedObject(target);so.FindProperty(name).floatValue=value;so.ApplyModifiedProperties();}
     }
 }

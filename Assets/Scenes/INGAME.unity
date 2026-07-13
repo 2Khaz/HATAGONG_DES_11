@@ -3166,7 +3166,7 @@ MonoBehaviour:
   feedbackController: {fileID: 902384524}
   hudPresenter: {fileID: 902384525}
   sessionController: {fileID: 1039023719}
-  generateOnStart: 1
+  generateOnStart: 0
   difficulty: 2
   useFixedSeed: 0
   fixedSeed: 12345
@@ -3516,7 +3516,11 @@ MonoBehaviour:
   timer: {fileID: 1039023717}
   score: {fileID: 1039023718}
   startOverlay: {fileID: 2122653515}
-  phase1: {fileID: 902384529}
+  transition: {fileID: 1039023721}
+  difficulty: 3
+  initialPhase: 1
+  phases:
+  - {fileID: 902384529}
 --- !u!114 &1039023720
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3542,7 +3546,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: aaf3be37efdc4f947aefbd0aa66ed17a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HATAGONG.GameFlow.PhaseTransitionController
-  session: {fileID: 1039023719}
   overlay: {fileID: 475668957}
   phaseHud: {fileID: 1919617846}
 --- !u!1 &1040048676
