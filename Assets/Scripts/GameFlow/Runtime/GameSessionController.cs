@@ -144,6 +144,12 @@ namespace HATAGONG.GameFlow
                 return;
             }
 
+            if (phase.PhaseId == GamePhaseId.Phase3)
+            {
+                CompleteGame();
+                return;
+            }
+
             _phaseTransaction.SetCurrentInputEnabled(false);
             if (!_model.SetState(GameSessionState.Transitioning))
             {

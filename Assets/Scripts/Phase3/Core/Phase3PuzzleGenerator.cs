@@ -9,12 +9,14 @@ namespace HATAGONG.Phase3
 {
     public static class Phase3PuzzleGenerator
     {
-        public const string GeneratorVersion = "phase3-geometric-partition-v3";
+        public const string GeneratorVersion = "phase3-recursive-grid-split-v4";
         public const int DefaultMaximumAttempts = 16;
         public const int MaximumAllowedAttempts = 64;
 
-        public static string ComputeCanonicalHash(GameDifficulty difficulty, IEnumerable<Phase3GeneratedPieceData> generatedPieces)
-            => ComputeCanonicalHashForVersion(GeneratorVersion, difficulty, generatedPieces);
+        public static string ComputeCanonicalHash(
+            GameDifficulty difficulty,
+            IEnumerable<Phase3GeneratedPieceData> generatedPieces) =>
+            ComputeCanonicalHashForVersion(GeneratorVersion, difficulty, generatedPieces);
 
         public static string ComputeCanonicalHashForVersion(
             string generatorVersion,
@@ -24,324 +26,558 @@ namespace HATAGONG.Phase3
             if (string.IsNullOrWhiteSpace(generatorVersion)) throw new ArgumentException("Generator version is required.", nameof(generatorVersion));
             Phase3PuzzleGeneratorDifficultyConfig.For(difficulty);
             if (generatedPieces == null) throw new ArgumentNullException(nameof(generatedPieces));
-            var pieces = new List<Phase3GeneratedPieceData>(generatedPieces);
-            if (pieces.Count == 0 || pieces.Exists(piece => piece == null))
-                throw new ArgumentException("Canonical hashing requires non-null generated pieces.", nameof(generatedPieces));
-            return ComputeSha256(BuildCanonicalStructureText(generatorVersion, difficulty, pieces));
+            var polygons = new List<string>();
+            foreach (Phase3GeneratedPieceData piece in generatedPieces)
+            {
+                if (piece == null) throw new ArgumentException("Canonical hashing requires non-null pieces.", nameof(generatedPieces));
+                polygons.Add(BuildAbsolutePolygonKey(piece.Vertices));
+            }
+            if (polygons.Count == 0) throw new ArgumentException("Canonical hashing requires at least one piece.", nameof(generatedPieces));
+            polygons.Sort(StringComparer.Ordinal);
+            return ComputeSha256($"{generatorVersion}|{(int)difficulty}|{string.Join("/", polygons)}");
         }
 
         public static Phase3PuzzleGenerationResult Generate(Phase3PuzzleGenerationRequest request)
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
             Phase3PuzzleGeneratorDifficultyConfig config;
-            try
-            {
-                config = Phase3PuzzleGeneratorDifficultyConfig.For(request.Difficulty);
-            }
+            try { config = Phase3PuzzleGeneratorDifficultyConfig.For(request.Difficulty); }
             catch (ArgumentOutOfRangeException)
             {
                 return Phase3PuzzleGenerationResult.Failed(
                     Phase3PuzzleGenerationFailure.InvalidDifficulty,
-                    "Difficulty must be Easy, Normal, or Hard.",
-                    request.Seed,
-                    request.Difficulty,
-                    0);
+                    "Difficulty must be Easy, Normal, or Hard.", request.Seed, request.Difficulty, 0);
             }
 
             var recentHashes = new HashSet<string>(request.RecentCanonicalHashes, StringComparer.OrdinalIgnoreCase);
-            string lastInvariantFailure = string.Empty;
-            bool rejectedDuplicate = false;
-            for (int attempt = 0; attempt < request.MaximumAttempts; attempt++)
+            var shapeHistory = new ShapeHistoryProfile(request.RecentShapeSignaturePuzzles);
+            bool duplicateRejected = false;
+            int exactHistoryRejections = 0;
+            string lastFailure = string.Empty;
+            for (int attemptIndex = 0; attemptIndex < request.MaximumAttempts; attemptIndex++)
             {
-                ulong effectiveSeed = CreateAttemptSeed(request.Seed, request.Difficulty, attempt);
-                var random = new DeterministicRandom(effectiveSeed);
-                List<Region> regions = BuildRegions(request.Difficulty, random);
-                if (!TryBuildCandidate(config, regions, random, out Candidate candidate, out lastInvariantFailure)) continue;
-
-                if (recentHashes.Contains(candidate.CanonicalHash))
+                GenerationAttempt attempt = BuildAttempt(request.Seed, request.Difficulty, attemptIndex, config, shapeHistory);
+                if (!attempt.Succeeded)
                 {
-                    rejectedDuplicate = true;
+                    lastFailure = attempt.FailureReason;
                     continue;
                 }
-
-                return Phase3PuzzleGenerationResult.Success(
-                    request.Seed,
-                    effectiveSeed,
-                    attempt,
-                    request.Difficulty,
-                    attempt + 1,
-                    candidate.PuzzleId,
-                    candidate.CanonicalHash,
-                    candidate.Signature,
-                    candidate.Puzzle,
-                    candidate.GeneratedPieces,
-                    candidate.InitialRotations);
+                if (recentHashes.Contains(attempt.Candidate.CanonicalHash))
+                {
+                    duplicateRejected = true;
+                    exactHistoryRejections++;
+                    lastFailure = string.Empty;
+                    continue;
+                }
+                return ToResult(request.Seed, request.Difficulty, attemptIndex, attempt, exactHistoryRejections);
             }
 
-            Phase3PuzzleGenerationFailure failure = rejectedDuplicate && string.IsNullOrEmpty(lastInvariantFailure)
+            Phase3PuzzleGenerationFailure failure = duplicateRejected && string.IsNullOrEmpty(lastFailure)
                 ? Phase3PuzzleGenerationFailure.DuplicateHistoryExhausted
                 : Phase3PuzzleGenerationFailure.AttemptsExhausted;
             string reason = failure == Phase3PuzzleGenerationFailure.DuplicateHistoryExhausted
                 ? $"All {request.MaximumAttempts} deterministic candidates matched recent canonical hashes."
-                : $"No valid puzzle was produced in {request.MaximumAttempts} attempts. Last invariant failure: {lastInvariantFailure}";
+                : $"No recursive split candidate passed within {request.MaximumAttempts} attempts. Last failure: {lastFailure}";
             return Phase3PuzzleGenerationResult.Failed(failure, reason, request.Seed, request.Difficulty, request.MaximumAttempts);
         }
 
-        public static Phase3PuzzleGenerationResult RegenerateCandidate(long requestedSeed, GameDifficulty difficulty, int attemptIndex)
+        public static Phase3PuzzleGenerationResult RegenerateCandidate(
+            long requestedSeed,
+            GameDifficulty difficulty,
+            int attemptIndex)
         {
             if (attemptIndex < 0 || attemptIndex >= MaximumAllowedAttempts)
                 throw new ArgumentOutOfRangeException(nameof(attemptIndex), attemptIndex, "Attempt index must be between 0 and 63.");
             Phase3PuzzleGeneratorDifficultyConfig config = Phase3PuzzleGeneratorDifficultyConfig.For(difficulty);
-            ulong effectiveSeed = CreateAttemptSeed(requestedSeed, difficulty, attemptIndex);
-            var random = new DeterministicRandom(effectiveSeed);
-            List<Region> regions = BuildRegions(difficulty, random);
-            if (!TryBuildCandidate(config, regions, random, out Candidate candidate, out string failureReason))
+            GenerationAttempt attempt = BuildAttempt(
+                requestedSeed, difficulty, attemptIndex, config, ShapeHistoryProfile.Empty);
+            if (!attempt.Succeeded)
                 return Phase3PuzzleGenerationResult.Failed(
                     Phase3PuzzleGenerationFailure.AttemptsExhausted,
-                    $"Deterministic candidate at attempt index {attemptIndex} failed invariants: {failureReason}",
-                    requestedSeed,
-                    difficulty,
-                    attemptIndex + 1);
+                    attempt.FailureReason, requestedSeed, difficulty, attemptIndex + 1);
+            return ToResult(requestedSeed, difficulty, attemptIndex, attempt);
+        }
 
-            return Phase3PuzzleGenerationResult.Success(
+        private static Phase3PuzzleGenerationResult ToResult(
+            long requestedSeed,
+            GameDifficulty difficulty,
+            int attemptIndex,
+            GenerationAttempt attempt,
+            int exactHistoryRejections = 0) =>
+            Phase3PuzzleGenerationResult.Success(
                 requestedSeed,
-                effectiveSeed,
+                attempt.EffectiveSeed,
                 attemptIndex,
                 difficulty,
                 attemptIndex + 1,
-                candidate.PuzzleId,
-                candidate.CanonicalHash,
-                candidate.Signature,
-                candidate.Puzzle,
-                candidate.GeneratedPieces,
-                candidate.InitialRotations);
+                attempt.Candidate.PuzzleId,
+                attempt.Candidate.CanonicalHash,
+                attempt.Candidate.Signature,
+                attempt.Candidate.Puzzle,
+                attempt.Candidate.GeneratedPieces,
+                attempt.Candidate.InitialRotations,
+                attempt.GenerationCycles,
+                attempt.BacktrackingCount,
+                attempt.ExhaustedCandidateCount,
+                attempt.BacktrackingBudgetExhaustionCount,
+                attempt.CurrentShapeDuplicateRejectionCount,
+                exactHistoryRejections);
+
+        private static GenerationAttempt BuildAttempt(
+            long requestedSeed,
+            GameDifficulty difficulty,
+            int attemptIndex,
+            Phase3PuzzleGeneratorDifficultyConfig config,
+            ShapeHistoryProfile shapeHistory)
+        {
+            ulong effectiveSeed = CreateAttemptSeed(requestedSeed, difficulty, attemptIndex);
+            string lastFailure = string.Empty;
+            int totalBacktracking = 0;
+            int exhausted = 0;
+            int budgetExhaustions = 0;
+            int shapeDuplicateRejections = 0;
+            for (int cycle = 0; cycle < config.CycleBudget; cycle++)
+            {
+                ulong cycleSeed = Mix(effectiveSeed ^ (1UL << 56) ^ (ulong)(cycle + 1) * 0x9E3779B97F4A7C15UL);
+                var random = new DeterministicRandom(cycleSeed);
+                var search = new SearchState(config.BacktrackingBudget);
+                var regions = new List<Region>
+                {
+                    new Region(new[]
+                    {
+                        new Phase3GridPoint(0, 0),
+                        new Phase3GridPoint(16, 0),
+                        new Phase3GridPoint(16, 16),
+                        new Phase3GridPoint(0, 16)
+                    })
+                };
+                if (TrySearch(regions, config, random, search, shapeHistory, out List<Region> completed))
+                {
+                    if (TryBuildCandidate(config, completed, random, out Candidate candidate, out lastFailure))
+                        return GenerationAttempt.Success(
+                            effectiveSeed, cycle + 1, totalBacktracking + search.BacktrackingCount,
+                            exhausted + search.ExhaustedCandidateCount,
+                            budgetExhaustions + search.BacktrackingBudgetExhaustionCount,
+                            shapeDuplicateRejections + search.CurrentShapeDuplicateRejectionCount,
+                            candidate);
+                }
+                else lastFailure = search.LastFailure;
+                totalBacktracking += search.BacktrackingCount;
+                exhausted += search.ExhaustedCandidateCount;
+                budgetExhaustions += search.BacktrackingBudgetExhaustionCount;
+                shapeDuplicateRejections += search.CurrentShapeDuplicateRejectionCount;
+            }
+            return GenerationAttempt.Failed(
+                effectiveSeed, lastFailure, totalBacktracking, exhausted,
+                budgetExhaustions, shapeDuplicateRejections,
+                config.CycleBudget);
         }
 
-        private static List<Region> BuildRegions(GameDifficulty difficulty, DeterministicRandom random)
+        private static bool TrySearch(
+            List<Region> regions,
+            Phase3PuzzleGeneratorDifficultyConfig config,
+            DeterministicRandom random,
+            SearchState state,
+            ShapeHistoryProfile shapeHistory,
+            out List<Region> completed)
         {
-            var regions = new List<Region>();
-            Phase3PuzzleGeneratorDifficultyConfig config = Phase3PuzzleGeneratorDifficultyConfig.For(difficulty);
-            int geometricHeight;
-            int minimumRowHeight;
-            int firstRowCount;
-            int secondRowCount;
-            int firstSplitCount;
-            int secondSplitCount;
-            switch (difficulty)
+            if (regions.Count == config.PieceCount)
             {
-                case GameDifficulty.Easy:
-                    geometricHeight = 6 + random.NextInt(2);
-                    minimumRowHeight = 4;
-                    firstRowCount = 2;
-                    secondRowCount = 3;
-                    firstSplitCount = 0;
-                    secondSplitCount = 0;
-                    break;
-                case GameDifficulty.Normal:
-                    geometricHeight = 5 + random.NextInt(2);
-                    minimumRowHeight = 5;
-                    firstRowCount = 3;
-                    secondRowCount = 3;
-                    firstSplitCount = 0;
-                    secondSplitCount = 1;
-                    break;
-                case GameDifficulty.Hard:
-                    geometricHeight = 5 + random.NextInt(2);
-                    minimumRowHeight = 5;
-                    firstRowCount = 3;
-                    secondRowCount = 3;
-                    firstSplitCount = 1;
-                    secondSplitCount = 2;
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(difficulty));
-            }
-
-            int remainingHeight = Phase3CoreConstants.LogicalGridSize - geometricHeight;
-            int firstRowHeight = minimumRowHeight + random.NextInt(remainingHeight - minimumRowHeight * 2 + 1);
-            int secondRowHeight = remainingHeight - firstRowHeight;
-            if (random.NextInt(2) == 1)
-            {
-                Swap(ref firstRowCount, ref secondRowCount);
-                Swap(ref firstSplitCount, ref secondSplitCount);
-            }
-
-            int geometricBandIndex = random.NextInt(3);
-            int rowIndex = 0;
-            int y = 0;
-            for (int bandIndex = 0; bandIndex < 3; bandIndex++)
-            {
-                if (bandIndex == geometricBandIndex)
+                if (ValidateFinalSet(regions, config, shapeHistory, out string failure))
                 {
-                    AddGeometricBand(regions, y, geometricHeight, config, random);
-                    y += geometricHeight;
+                    completed = regions;
+                    return true;
+                }
+                state.LastFailure = failure;
+                if (string.Equals(failure, "Duplicate shape signature in current puzzle.", StringComparison.Ordinal))
+                    state.CurrentShapeDuplicateRejectionCount++;
+                completed = null;
+                return false;
+            }
+
+            List<SplitOption> options = EnumerateOptions(regions, config, random, shapeHistory);
+            if (options.Count == 0)
+            {
+                state.ExhaustedCandidateCount++;
+                state.LastFailure = "No valid finite grid split remained.";
+                completed = null;
+                return false;
+            }
+            int remainingAfterThis = config.PieceCount - (regions.Count + 1);
+            for (int optionIndex = 0; optionIndex < options.Count; optionIndex++)
+            {
+                SplitOption option = options[optionIndex];
+                var next = new List<Region>(regions.Count + 1);
+                for (int i = 0; i < regions.Count; i++)
+                {
+                    if (i != option.RegionIndex) next.Add(regions[i]);
+                }
+                next.Add(option.First);
+                next.Add(option.Second);
+                next.Sort();
+                if (remainingAfterThis == 0 && !ValidateFinalSet(next, config, shapeHistory, out string finalFailure))
+                {
+                    if (string.Equals(finalFailure, "Duplicate shape signature in current puzzle.", StringComparison.Ordinal))
+                        state.CurrentShapeDuplicateRejectionCount++;
                     continue;
                 }
-
-                bool firstRow = rowIndex++ == 0;
-                int height = firstRow ? firstRowHeight : secondRowHeight;
-                int count = firstRow ? firstRowCount : secondRowCount;
-                int splitCount = firstRow ? firstSplitCount : secondSplitCount;
-                AddRectangularRow(regions, y, height, CreateRowWidths(count, height, splitCount, config, random), splitCount, random);
-                y += height;
-            }
-
-            bool mirrorX = random.NextInt(2) == 1;
-            bool mirrorY = random.NextInt(2) == 1;
-            if (mirrorX || mirrorY)
-            {
-                for (int i = 0; i < regions.Count; i++) regions[i] = regions[i].Transform(mirrorX, mirrorY);
-            }
-            regions.Sort();
-            return regions;
-        }
-
-        private static void AddGeometricBand(
-            ICollection<Region> regions,
-            int y,
-            int height,
-            Phase3PuzzleGeneratorDifficultyConfig config,
-            DeterministicRandom random)
-        {
-            int minimumEnd = (int)Math.Ceiling(Math.Max(
-                height + Math.Max(config.MinimumPieceArea / height, config.MinimumThickness * Math.Sqrt(2d)),
-                Phase3CoreConstants.LogicalGridSize + height - config.PartitionRules.MaximumAspectRatio * height));
-            int maximumEnd = (int)Math.Floor(Math.Min(
-                Phase3CoreConstants.LogicalGridSize - 1d,
-                config.PartitionRules.MaximumAspectRatio * height));
-            int topRightStart = minimumEnd + random.NextInt(maximumEnd - minimumEnd + 1);
-            regions.Add(new Region(new[]
-            {
-                new Phase3GridPoint(0, y), new Phase3GridPoint(height, y), new Phase3GridPoint(0, y + height)
-            }));
-            regions.Add(new Region(new[]
-            {
-                new Phase3GridPoint(height, y), new Phase3GridPoint(topRightStart, y),
-                new Phase3GridPoint(topRightStart - height, y + height), new Phase3GridPoint(0, y + height)
-            }));
-            regions.Add(new Region(new[]
-            {
-                new Phase3GridPoint(topRightStart, y), new Phase3GridPoint(Phase3CoreConstants.LogicalGridSize, y),
-                new Phase3GridPoint(Phase3CoreConstants.LogicalGridSize, y + height), new Phase3GridPoint(topRightStart - height, y + height)
-            }));
-        }
-
-        private static int[] CreateRowWidths(
-            int count,
-            int height,
-            int splitCount,
-            Phase3PuzzleGeneratorDifficultyConfig config,
-            DeterministicRandom random)
-        {
-            int minimumWidth = Math.Max(
-                (int)Math.Ceiling(config.MinimumThickness),
-                (int)Math.Ceiling(config.MinimumPieceArea / height));
-            int maximumWidth = (int)Math.Floor(Math.Min(
-                config.PartitionRules.MaximumAspectRatio * height,
-                config.PartitionRules.MaximumPieceAreaRatio * Phase3CoreConstants.LogicalFieldArea / height));
-            var widths = new int[count];
-            for (int i = 0; i < widths.Length; i++) widths[i] = minimumWidth;
-            for (int i = 0; i < splitCount; i++) widths[i] = Math.Max(widths[i], height);
-
-            int assigned = 0;
-            for (int i = 0; i < widths.Length; i++) assigned += widths[i];
-            int remaining = Phase3CoreConstants.LogicalGridSize - assigned;
-            if (remaining < 0) throw new InvalidOperationException("The selected row cannot satisfy the generator quality limits.");
-            for (int unit = 0; unit < remaining; unit++)
-            {
-                int start = random.NextInt(widths.Length);
-                int selected = -1;
-                for (int offset = 0; offset < widths.Length; offset++)
+                if (TrySearch(next, config, random, state, shapeHistory, out completed)) return true;
+                state.BacktrackingCount++;
+                if (state.BacktrackingCount >= state.BacktrackingBudget)
                 {
-                    int candidate = (start + offset) % widths.Length;
-                    if (widths[candidate] >= maximumWidth) continue;
-                    selected = candidate;
+                    state.BacktrackingBudgetExhaustionCount++;
+                    state.LastFailure = "Backtracking budget exhausted.";
+                    completed = null;
+                    return false;
+                }
+            }
+            state.ExhaustedCandidateCount++;
+            completed = null;
+            return false;
+        }
+
+        private static List<SplitOption> EnumerateOptions(
+            IReadOnlyList<Region> regions,
+            Phase3PuzzleGeneratorDifficultyConfig config,
+            DeterministicRandom random,
+            ShapeHistoryProfile shapeHistory)
+        {
+            var options = new List<SplitOption>();
+            for (int regionIndex = 0; regionIndex < regions.Count; regionIndex++)
+            {
+                Region region = regions[regionIndex];
+                Phase3Bounds2D bounds = Phase3Geometry.GetBounds(region.Vertices);
+                int minX = (int)bounds.MinX;
+                int maxX = (int)bounds.MaxX;
+                int minY = (int)bounds.MinY;
+                int maxY = (int)bounds.MaxY;
+                AddLines(options, regions, regionIndex, region, 1, 0, minX + 1, maxX - 1, config, random, shapeHistory);
+                AddLines(options, regions, regionIndex, region, 0, 1, minY + 1, maxY - 1, config, random, shapeHistory);
+                int minDifference = int.MaxValue;
+                int maxDifference = int.MinValue;
+                int minSum = int.MaxValue;
+                int maxSum = int.MinValue;
+                for (int i = 0; i < region.Vertices.Count; i++)
+                {
+                    int difference = region.Vertices[i].X - region.Vertices[i].Y;
+                    int sum = region.Vertices[i].X + region.Vertices[i].Y;
+                    minDifference = Math.Min(minDifference, difference);
+                    maxDifference = Math.Max(maxDifference, difference);
+                    minSum = Math.Min(minSum, sum);
+                    maxSum = Math.Max(maxSum, sum);
+                }
+                AddLines(options, regions, regionIndex, region, 1, -1, minDifference + 1, maxDifference - 1, config, random, shapeHistory);
+                AddLines(options, regions, regionIndex, region, 1, 1, minSum + 1, maxSum - 1, config, random, shapeHistory);
+            }
+            options.Sort((left, right) =>
+            {
+                int score = right.Score.CompareTo(left.Score);
+                return score != 0 ? score : left.Order.CompareTo(right.Order);
+            });
+            return options;
+        }
+
+        private static void AddLines(
+            ICollection<SplitOption> output,
+            IReadOnlyList<Region> currentRegions,
+            int regionIndex,
+            Region region,
+            int a,
+            int b,
+            int minimumC,
+            int maximumC,
+            Phase3PuzzleGeneratorDifficultyConfig config,
+            DeterministicRandom random,
+            ShapeHistoryProfile shapeHistory)
+        {
+            for (int c = minimumC; c <= maximumC; c++)
+            {
+                if (!TrySplit(region, a, b, c, out Region first, out Region second)) continue;
+                if (!MeetsIntermediateLimits(first, config) || !MeetsIntermediateLimits(second, config)) continue;
+                double balance = Math.Abs(first.Area - second.Area);
+                int balanceWeight;
+                switch (config.Difficulty)
+                {
+                    case GameDifficulty.Easy: balanceWeight = (int)Math.Round(1000d - balance * 18d); break;
+                    case GameDifficulty.Normal: balanceWeight = (int)Math.Round(700d - balance * 6d); break;
+                    default: balanceWeight = (int)Math.Round(500d + balance * 4d); break;
+                }
+                int areaWeight = (int)Math.Round(region.Area * 8d);
+                int jitter = random.NextInt(8001);
+                int completionWeight = EvaluateCompletionWeight(currentRegions, regionIndex, first, second, config, shapeHistory);
+                output.Add(new SplitOption(
+                    regionIndex,
+                    first,
+                    second,
+                    completionWeight + areaWeight + balanceWeight + jitter,
+                    random.NextUInt64()));
+            }
+        }
+
+        private static int EvaluateCompletionWeight(
+            IReadOnlyList<Region> currentRegions,
+            int replacedRegionIndex,
+            Region first,
+            Region second,
+            Phase3PuzzleGeneratorDifficultyConfig config,
+            ShapeHistoryProfile shapeHistory)
+        {
+            var signatures = new HashSet<string>(StringComparer.Ordinal);
+            var kindCounts = new Dictionary<Phase3GeneratedShapeKind, int>();
+            int validUniqueLeaves = 0;
+            int invalidLeaves = 0;
+            int duplicateLeaves = 0;
+            int complexLeaves = 0;
+            for (int i = 0; i < currentRegions.Count + 1; i++)
+            {
+                Region candidate;
+                if (i < currentRegions.Count)
+                {
+                    if (i == replacedRegionIndex) candidate = first;
+                    else candidate = currentRegions[i];
+                }
+                else candidate = second;
+
+                Phase3GeneratedShapeKind kind;
+                try { kind = ClassifyShape(candidate.Vertices); }
+                catch (ArgumentException)
+                {
+                    invalidLeaves++;
+                    continue;
+                }
+                if (!IsAllowedFinalKind(candidate.Vertices, kind, config.Difficulty) ||
+                    !MeetsQualityLimits(candidate.Vertices, config, out _))
+                {
+                    invalidLeaves++;
+                    continue;
+                }
+                string signature = ComputeShapeSignature(candidate.Vertices);
+                if (shapeHistory.IsForbiddenByPreviousPuzzle(signature))
+                {
+                    invalidLeaves++;
+                    continue;
+                }
+                if (!signatures.Add(signature))
+                {
+                    duplicateLeaves++;
+                    continue;
+                }
+                validUniqueLeaves++;
+                validUniqueLeaves += shapeHistory.WeightFor(signature) / 25;
+                kindCounts.TryGetValue(kind, out int count);
+                kindCounts[kind] = count + 1;
+                if (kind == Phase3GeneratedShapeKind.Rhombus ||
+                    kind == Phase3GeneratedShapeKind.Parallelogram ||
+                    kind == Phase3GeneratedShapeKind.Trapezoid && !IsEasyTrapezoid(candidate.Vertices))
+                    complexLeaves++;
+            }
+
+            int score = validUniqueLeaves * 20000 - invalidLeaves * 2500 - duplicateLeaves * 12000;
+            int maximumKind = 0;
+            foreach (KeyValuePair<Phase3GeneratedShapeKind, int> pair in kindCounts)
+                maximumKind = Math.Max(maximumKind, pair.Value);
+            score -= Math.Max(0, maximumKind - config.PieceCount / 2) * 30000;
+            if (config.Difficulty == GameDifficulty.Normal) score += Math.Min(1, complexLeaves) * 18000;
+            if (config.Difficulty == GameDifficulty.Hard) score += Math.Min(2, complexLeaves) * 18000;
+            return score;
+        }
+
+        private static bool TrySplit(Region region, int a, int b, int c, out Region first, out Region second)
+        {
+            var positive = new List<Phase3GridPoint>();
+            var negative = new List<Phase3GridPoint>();
+            bool hasPositive = false;
+            bool hasNegative = false;
+            for (int i = 0; i < region.Vertices.Count; i++)
+            {
+                Phase3GridPoint current = region.Vertices[i];
+                Phase3GridPoint next = region.Vertices[(i + 1) % region.Vertices.Count];
+                int currentValue = a * current.X + b * current.Y - c;
+                int nextValue = a * next.X + b * next.Y - c;
+                if (currentValue >= 0) AddDistinct(positive, current);
+                if (currentValue <= 0) AddDistinct(negative, current);
+                hasPositive |= currentValue > 0;
+                hasNegative |= currentValue < 0;
+                if (currentValue * nextValue < 0)
+                {
+                    int denominator = currentValue - nextValue;
+                    long numeratorX = (long)current.X * denominator + (long)(next.X - current.X) * currentValue;
+                    long numeratorY = (long)current.Y * denominator + (long)(next.Y - current.Y) * currentValue;
+                    if (numeratorX % denominator != 0 || numeratorY % denominator != 0)
+                    {
+                        first = default;
+                        second = default;
+                        return false;
+                    }
+                    var intersection = new Phase3GridPoint((int)(numeratorX / denominator), (int)(numeratorY / denominator));
+                    AddDistinct(positive, intersection);
+                    AddDistinct(negative, intersection);
+                }
+            }
+            if (!hasPositive || !hasNegative)
+            {
+                first = default;
+                second = default;
+                return false;
+            }
+            positive = CleanPolygon(positive);
+            negative = CleanPolygon(negative);
+            if (positive.Count < 3 || negative.Count < 3)
+            {
+                first = default;
+                second = default;
+                return false;
+            }
+            first = new Region(positive);
+            second = new Region(negative);
+            return true;
+        }
+
+        private static List<Phase3GridPoint> CleanPolygon(List<Phase3GridPoint> source)
+        {
+            if (source.Count > 1 && source[0] == source[source.Count - 1]) source.RemoveAt(source.Count - 1);
+            bool removed;
+            do
+            {
+                removed = false;
+                for (int i = 0; i < source.Count && source.Count >= 3; i++)
+                {
+                    Phase3GridPoint previous = source[(i - 1 + source.Count) % source.Count];
+                    Phase3GridPoint current = source[i];
+                    Phase3GridPoint next = source[(i + 1) % source.Count];
+                    long cross = (long)(current.X - previous.X) * (next.Y - current.Y) -
+                                 (long)(current.Y - previous.Y) * (next.X - current.X);
+                    if (cross != 0) continue;
+                    source.RemoveAt(i);
+                    removed = true;
                     break;
                 }
-                if (selected < 0) throw new InvalidOperationException("The selected row exceeds its bounded aspect-ratio capacity.");
-                widths[selected]++;
-            }
-            Shuffle(widths, random);
-            return widths;
+            } while (removed);
+            return source;
         }
 
-        private static void Shuffle(int[] values, DeterministicRandom random)
+        private static void AddDistinct(ICollection<Phase3GridPoint> target, Phase3GridPoint point)
         {
-            for (int i = values.Length - 1; i > 0; i--)
+            if (target is List<Phase3GridPoint> list && list.Count > 0 && list[list.Count - 1] == point) return;
+            target.Add(point);
+        }
+
+        private static bool MeetsIntermediateLimits(Region region, Phase3PuzzleGeneratorDifficultyConfig config)
+        {
+            if (region.Vertices.Count < 3 || region.Vertices.Count > 8) return false;
+            if (region.Area < config.MinimumPieceArea - Phase3CoreConstants.ComparisonEpsilon) return false;
+            if (!Phase3Geometry.IsConvex(region.Vertices) || Phase3Geometry.HasSelfIntersection(region.Vertices)) return false;
+            if (!Phase3Geometry.AreAllVerticesWithinLogicalGrid(region.Vertices) || !Phase3Geometry.AreAllEdgesAllowed(region.Vertices)) return false;
+            if (CalculateMinimumEdgeLength(region.Vertices) < config.MinimumEdgeLength - Phase3CoreConstants.ComparisonEpsilon) return false;
+            return CalculateMinimumThickness(region.Vertices) >= config.MinimumThickness - Phase3CoreConstants.ComparisonEpsilon;
+        }
+
+        private static bool ValidateFinalSet(
+            IReadOnlyList<Region> regions,
+            Phase3PuzzleGeneratorDifficultyConfig config,
+            ShapeHistoryProfile shapeHistory,
+            out string failureReason)
+        {
+            if (regions.Count != config.PieceCount)
             {
-                int swap = random.NextInt(i + 1);
-                int temporary = values[i];
-                values[i] = values[swap];
-                values[swap] = temporary;
+                failureReason = "Target piece count mismatch.";
+                return false;
             }
-        }
-
-        private static void Swap(ref int first, ref int second)
-        {
-            int temporary = first;
-            first = second;
-            second = temporary;
-        }
-
-        private static void AddRectangularRow(
-            ICollection<Region> regions,
-            int y,
-            int height,
-            IReadOnlyList<int> widths,
-            int splitCount,
-            DeterministicRandom random)
-        {
-            var splitIndices = new HashSet<int>();
-            for (int split = 0; split < splitCount; split++)
+            var signatures = new HashSet<string>(StringComparer.Ordinal);
+            var kindCounts = new Dictionary<Phase3GeneratedShapeKind, int>();
+            int complexCount = 0;
+            for (int i = 0; i < regions.Count; i++)
             {
-                int selected = -1;
-                for (int i = 0; i < widths.Count; i++)
+                Region region = regions[i];
+                if (region.Vertices.Count != 3 && region.Vertices.Count != 4)
                 {
-                    if (splitIndices.Contains(i) || widths[i] < height) continue;
-                    if (selected < 0 || widths[i] > widths[selected] ||
-                        (widths[i] == widths[selected] && random.NextInt(2) == 1)) selected = i;
+                    failureReason = "Final polygon is not a triangle or quadrilateral.";
+                    return false;
                 }
-                if (selected < 0) throw new InvalidOperationException("A diagonal split requires enough width for a 45-degree edge.");
-                splitIndices.Add(selected);
+                Phase3GeneratedShapeKind kind;
+                try { kind = ClassifyShape(region.Vertices); }
+                catch (ArgumentException)
+                {
+                    failureReason = "Final polygon is outside the allowed shape catalog.";
+                    return false;
+                }
+                if (!IsAllowedFinalKind(region.Vertices, kind, config.Difficulty))
+                {
+                    failureReason = $"Shape {kind} is not allowed for {config.Difficulty}.";
+                    return false;
+                }
+                if (!MeetsQualityLimits(region.Vertices, config, out failureReason)) return false;
+                string signature = ComputeShapeSignature(region.Vertices);
+                if (shapeHistory.IsForbiddenByPreviousPuzzle(signature))
+                {
+                    failureReason = "Shape signature appeared in the immediately previous puzzle.";
+                    return false;
+                }
+                if (!signatures.Add(signature))
+                {
+                    failureReason = "Duplicate shape signature in current puzzle.";
+                    return false;
+                }
+                kindCounts.TryGetValue(kind, out int count);
+                kindCounts[kind] = count + 1;
+                if (kind == Phase3GeneratedShapeKind.Rhombus || kind == Phase3GeneratedShapeKind.Parallelogram ||
+                    kind == Phase3GeneratedShapeKind.Trapezoid && !IsEasyTrapezoid(region.Vertices)) complexCount++;
             }
-
-            int x = 0;
-            for (int i = 0; i < widths.Count; i++)
+            foreach (KeyValuePair<Phase3GeneratedShapeKind, int> count in kindCounts)
+                if (count.Value > config.PieceCount / 2)
+                {
+                    failureReason = "One shape kind exceeds half of the puzzle.";
+                    return false;
+                }
+            if (Count(kindCounts, Phase3GeneratedShapeKind.Square) > 1 ||
+                Count(kindCounts, Phase3GeneratedShapeKind.RightTriangle) > 1 ||
+                Count(kindCounts, Phase3GeneratedShapeKind.Rhombus) > 1)
             {
-                int width = widths[i];
-                if (!splitIndices.Contains(i))
-                {
-                    regions.Add(Rectangle(x, y, width, height));
-                }
-                else if (width == height && random.NextInt(2) == 0)
-                {
-                    regions.Add(new Region(new[] { P(x, y), P(x + width, y), P(x + width, y + height) }));
-                    regions.Add(new Region(new[] { P(x, y), P(x + width, y + height), P(x, y + height) }));
-                }
-                else if (width == height)
-                {
-                    regions.Add(new Region(new[] { P(x, y), P(x + width, y), P(x, y + height) }));
-                    regions.Add(new Region(new[] { P(x + width, y), P(x + width, y + height), P(x, y + height) }));
-                }
-                else if (random.NextInt(2) == 0)
-                {
-                    regions.Add(new Region(new[] { P(x, y), P(x + height, y + height), P(x, y + height) }));
-                    regions.Add(new Region(new[] { P(x, y), P(x + width, y), P(x + width, y + height), P(x + height, y + height) }));
-                }
-                else
-                {
-                    int cutX = x + width - height;
-                    regions.Add(new Region(new[] { P(cutX, y), P(x + width, y), P(x + width, y + height) }));
-                    regions.Add(new Region(new[] { P(x, y), P(cutX, y), P(x + width, y + height), P(x, y + height) }));
-                }
-                x += width;
+                failureReason = "Square, right triangle, or rhombus maximum count exceeded.";
+                return false;
             }
+            if (config.Difficulty == GameDifficulty.Normal &&
+                Count(kindCounts, Phase3GeneratedShapeKind.Rhombus) + Count(kindCounts, Phase3GeneratedShapeKind.Parallelogram) < 1)
+            {
+                failureReason = "Normal requires a rhombus or parallelogram.";
+                return false;
+            }
+            if (config.Difficulty == GameDifficulty.Hard && complexCount < 2)
+            {
+                failureReason = "Hard requires at least two complex quadrilaterals.";
+                return false;
+            }
+            failureReason = string.Empty;
+            return true;
         }
 
-        private static Region Rectangle(int x, int y, int width, int height) => new Region(new[]
+        private static int Count(IDictionary<Phase3GeneratedShapeKind, int> counts, Phase3GeneratedShapeKind kind) =>
+            counts.TryGetValue(kind, out int value) ? value : 0;
+
+        private static bool IsAllowedFinalKind(
+            IReadOnlyList<Phase3GridPoint> vertices,
+            Phase3GeneratedShapeKind kind,
+            GameDifficulty difficulty)
         {
-            P(x, y), P(x + width, y), P(x + width, y + height), P(x, y + height)
-        });
+            if (kind == Phase3GeneratedShapeKind.RightTriangle || kind == Phase3GeneratedShapeKind.Square ||
+                kind == Phase3GeneratedShapeKind.Rectangle) return true;
+            if (kind == Phase3GeneratedShapeKind.Trapezoid)
+                return difficulty != GameDifficulty.Easy || IsEasyTrapezoid(vertices);
+            return difficulty != GameDifficulty.Easy &&
+                   (kind == Phase3GeneratedShapeKind.Rhombus || kind == Phase3GeneratedShapeKind.Parallelogram);
+        }
+
+        private static bool IsEasyTrapezoid(IReadOnlyList<Phase3GridPoint> vertices)
+        {
+            if (vertices.Count != 4) return false;
+            bool firstParallel = Parallel(Edge(vertices, 0), Edge(vertices, 2));
+            int firstLeg = firstParallel ? 1 : 0;
+            int secondLeg = firstParallel ? 3 : 2;
+            Vector legA = Edge(vertices, firstLeg);
+            Vector legB = Edge(vertices, secondLeg);
+            Vector baseEdge = Edge(vertices, firstParallel ? 0 : 1);
+            return Perpendicular(legA, baseEdge) || Perpendicular(legB, baseEdge) || legA.LengthSquared == legB.LengthSquared;
+        }
 
         private static bool TryBuildCandidate(
             Phase3PuzzleGeneratorDifficultyConfig config,
@@ -350,114 +586,79 @@ namespace HATAGONG.Phase3
             out Candidate candidate,
             out string failureReason)
         {
-            if (regions.Count != config.PieceCount)
-            {
-                candidate = default;
-                failureReason = $"Expected {config.PieceCount} regions but built {regions.Count}.";
-                return false;
-            }
-
+            regions.Sort();
             var pieces = new List<Phase3PieceDefinition>(regions.Count);
             var slots = new List<Phase3SlotDefinition>(regions.Count);
             var generated = new List<Phase3GeneratedPieceData>(regions.Count);
             var initialRotations = new List<Phase3InitialPieceRotation>(regions.Count);
+            int sameAsTarget = 0;
             for (int i = 0; i < regions.Count; i++)
             {
                 Region region = regions[i];
-                string difficultyName = config.Difficulty.ToString().ToLowerInvariant();
-                string pieceId = $"p3-{difficultyName}-piece-{i + 1:D2}";
-                string slotId = $"p3-{difficultyName}-slot-{i + 1:D2}";
-                string deckSlotId = $"p3-{difficultyName}-deck-{i + 1:D2}";
-                int symmetryPeriod = DetermineRotationalSymmetryPeriod(region.Vertices);
-                Phase3GeneratedShapeKind shapeKind = ClassifyShape(region.Vertices);
-                var shape = new Phase3ShapeDefinition($"{pieceId}-shape", region.Vertices, symmetryPeriod);
-                var targetRotation = new Phase3RotationStep(0);
-                Phase3RotationStep initialRotation = CreateInitialRotation(random, targetRotation, symmetryPeriod);
-                Phase3Point2D canonicalCentroid = shape.Centroid * (Phase3CoreConstants.CanvasFieldSize / (double)Phase3CoreConstants.LogicalGridSize);
-
-                slots.Add(new Phase3SlotDefinition(slotId, shape, canonicalCentroid, targetRotation));
-                pieces.Add(new Phase3PieceDefinition(pieceId, deckSlotId, shape, new[] { new Phase3AllowedTarget(slotId, targetRotation) }));
-                generated.Add(new Phase3GeneratedPieceData(pieceId, slotId, region.Vertices, shapeKind, symmetryPeriod, targetRotation, initialRotation));
+                string prefix = config.Difficulty.ToString().ToLowerInvariant();
+                string pieceId = $"p3-{prefix}-piece-{i + 1:D2}";
+                string slotId = $"p3-{prefix}-slot-{i + 1:D2}";
+                string deckSlotId = $"p3-{prefix}-deck-{i + 1:D2}";
+                int symmetry = DetermineRotationalSymmetryPeriod(region.Vertices);
+                Phase3GeneratedShapeKind kind = ClassifyShape(region.Vertices);
+                var targetRotation = new Phase3RotationStep(random.NextInt(8));
+                Phase3RotationStep initialRotation = CreateInitialRotation(random, targetRotation, config.Difficulty, ref sameAsTarget);
+                var shape = new Phase3ShapeDefinition($"{pieceId}-shape", region.Vertices, symmetry);
+                double logicalScale = Phase3CoreConstants.CanvasFieldSize / (double)Phase3CoreConstants.LogicalGridSize;
+                Phase3Point2D canonicalCentroid = shape.Centroid * logicalScale;
+                slots.Add(new Phase3SlotDefinition(slotId, shape, canonicalCentroid, default));
+                pieces.Add(new Phase3PieceDefinition(pieceId, deckSlotId, shape,
+                    new[]
+                    {
+                        new Phase3AllowedTarget(
+                            slotId,
+                            targetRotation,
+                            new Phase3RotationStep(-targetRotation.Value))
+                    }));
+                generated.Add(new Phase3GeneratedPieceData(
+                    pieceId, slotId, region.Vertices, kind, symmetry, targetRotation, initialRotation));
                 initialRotations.Add(new Phase3InitialPieceRotation(pieceId, initialRotation));
             }
-
             Phase3PuzzleDefinition puzzle;
-            try
-            {
-                puzzle = new Phase3PuzzleDefinition(pieces, slots);
-            }
-            catch (Exception exception)
+            try { puzzle = new Phase3PuzzleDefinition(pieces, slots); }
+            catch (ArgumentException exception)
             {
                 candidate = default;
-                failureReason = $"Definition construction failed: {exception.Message}";
+                failureReason = exception.Message;
                 return false;
             }
-
-            if (!ValidateGeneratedData(puzzle, generated, config, out failureReason))
+            Phase3PartitionValidationResult partition = Phase3PartitionValidator.Validate(puzzle, config.Difficulty, config.PartitionRules);
+            if (!partition.IsValid)
             {
                 candidate = default;
+                failureReason = partition.Issues[0].ToString();
                 return false;
             }
-
-            string canonicalHash = ComputeCanonicalHash(config.Difficulty, generated);
-            Phase3PuzzleStructureSignature signature = BuildSignature(config.Difficulty, generated);
-            string puzzleId = $"p3-{config.Difficulty.ToString().ToLowerInvariant()}-{canonicalHash.Substring(0, 16)}";
-            candidate = new Candidate(puzzleId, canonicalHash, signature, puzzle, generated, initialRotations);
+            string hash = ComputeCanonicalHash(config.Difficulty, generated);
+            string puzzleId = $"p3-v4-{config.Difficulty.ToString().ToLowerInvariant()}-{hash.Substring(0, 12)}";
+            candidate = new Candidate(
+                puzzleId, hash, BuildStructureSignature(config.Difficulty, generated), puzzle, generated, initialRotations);
+            failureReason = string.Empty;
             return true;
         }
 
-        private static bool ValidateGeneratedData(
-            Phase3PuzzleDefinition puzzle,
-            IReadOnlyList<Phase3GeneratedPieceData> generated,
-            Phase3PuzzleGeneratorDifficultyConfig config,
-            out string failureReason)
+        private static Phase3RotationStep CreateInitialRotation(
+            DeterministicRandom random,
+            Phase3RotationStep target,
+            GameDifficulty difficulty,
+            ref int sameAsTarget)
         {
-            var pieceIds = new HashSet<string>(StringComparer.Ordinal);
-            var slotIds = new HashSet<string>(StringComparer.Ordinal);
-            for (int i = 0; i < generated.Count; i++)
+            int[] steps = difficulty == GameDifficulty.Easy ? new[] { 0, 2, 4, 6 } : new[] { 0, 1, 2, 3, 4, 5, 6, 7 };
+            int maximumSame = difficulty == GameDifficulty.Easy ? 3 : difficulty == GameDifficulty.Normal ? 2 : 0;
+            int start = random.NextInt(steps.Length);
+            for (int offset = 0; offset < steps.Length; offset++)
             {
-                Phase3GeneratedPieceData piece = generated[i];
-                if (!pieceIds.Add(piece.PieceId) || !slotIds.Add(piece.SlotId))
-                {
-                    failureReason = "Generated Piece and Slot IDs must be unique.";
-                    return false;
-                }
-                Phase3PolygonValidationResult polygon = Phase3Geometry.ValidatePolygon(piece.Vertices);
-                if (!polygon.IsValid || !Phase3Geometry.IsConvex(piece.Vertices))
-                {
-                    failureReason = $"Piece '{piece.PieceId}' has invalid connected polygon geometry: {polygon.Message}";
-                    return false;
-                }
-                if (!MeetsQualityLimits(piece.Vertices, config, out string qualityFailure))
-                {
-                    failureReason = $"Piece '{piece.PieceId}' failed quality limits: {qualityFailure}";
-                    return false;
-                }
-                if (ClassifyShape(piece.Vertices) != piece.ShapeKind)
-                {
-                    failureReason = $"Piece '{piece.PieceId}' has an unsupported or inconsistent shape classification.";
-                    return false;
-                }
-                if (piece.InitialRotation.IsEquivalentTo(piece.TargetRotation, piece.RotationalSymmetryPeriodSteps))
-                {
-                    failureReason = $"Piece '{piece.PieceId}' starts in a rotation visually equivalent to its target.";
-                    return false;
-                }
+                var rotation = new Phase3RotationStep(steps[(start + offset) % steps.Length]);
+                if (rotation == target && sameAsTarget >= maximumSame) continue;
+                if (rotation == target) sameAsTarget++;
+                return rotation;
             }
-
-            Phase3PartitionValidationResult validation = Phase3PartitionValidator.Validate(puzzle, config.Difficulty, config.PartitionRules);
-            if (!validation.IsValid)
-            {
-                failureReason = validation.Issues[0].ToString();
-                return false;
-            }
-            if (Math.Abs(validation.PieceAreaSum - Phase3CoreConstants.LogicalFieldArea) > Phase3CoreConstants.ComparisonEpsilon)
-            {
-                failureReason = $"Piece area sum {validation.PieceAreaSum:R} does not equal {Phase3CoreConstants.LogicalFieldArea}.";
-                return false;
-            }
-            failureReason = string.Empty;
-            return true;
+            return new Phase3RotationStep(target.Value + 1);
         }
 
         public static bool MeetsQualityLimits(
@@ -467,22 +668,53 @@ namespace HATAGONG.Phase3
         {
             if (vertices == null) throw new ArgumentNullException(nameof(vertices));
             if (config == null) throw new ArgumentNullException(nameof(config));
-            double area = Phase3Geometry.AbsoluteArea(vertices);
-            if (area < config.MinimumPieceArea - Phase3CoreConstants.ComparisonEpsilon)
+            Phase3PolygonValidationResult polygon = Phase3Geometry.ValidatePolygon(vertices);
+            if (!polygon.IsValid)
             {
-                failureReason = $"Area {area:R} is below {config.MinimumPieceArea:R}.";
+                failureReason = polygon.Message;
                 return false;
             }
-            double minimumThickness = CalculateMinimumThickness(vertices);
-            if (minimumThickness < config.MinimumThickness - Phase3CoreConstants.ComparisonEpsilon)
+            if (vertices.Count != 3 && vertices.Count != 4)
             {
-                failureReason = $"Minimum support-line thickness {minimumThickness:R} is below {config.MinimumThickness:R}.";
+                failureReason = "Final piece requires three or four vertices.";
                 return false;
             }
-            double minimumAngle = CalculateMinimumInteriorAngleDegrees(vertices);
-            if (minimumAngle < config.MinimumInteriorAngleDegrees - Phase3CoreConstants.ComparisonEpsilon)
+            if (Phase3Geometry.AbsoluteArea(vertices) < config.MinimumPieceArea - Phase3CoreConstants.ComparisonEpsilon)
             {
-                failureReason = $"Interior angle {minimumAngle:R} is below {config.MinimumInteriorAngleDegrees:R}.";
+                failureReason = "Minimum area failed.";
+                return false;
+            }
+            if (CalculateMinimumEdgeLength(vertices) < config.MinimumEdgeLength - Phase3CoreConstants.ComparisonEpsilon)
+            {
+                failureReason = "Minimum edge length failed.";
+                return false;
+            }
+            if (CalculateMinimumThickness(vertices) < config.MinimumThickness - Phase3CoreConstants.ComparisonEpsilon)
+            {
+                failureReason = "Minimum thickness failed.";
+                return false;
+            }
+            if (Phase3Geometry.GetBounds(vertices).AspectRatio >
+                config.PartitionRules.MaximumAspectRatio + Phase3CoreConstants.ComparisonEpsilon)
+            {
+                failureReason = "Maximum aspect ratio failed.";
+                return false;
+            }
+            if (CalculateMinimumInteriorAngleDegrees(vertices) < config.MinimumInteriorAngleDegrees - Phase3CoreConstants.ComparisonEpsilon)
+            {
+                failureReason = "Minimum angle failed.";
+                return false;
+            }
+            Phase3GeneratedShapeKind kind;
+            try { kind = ClassifyShape(vertices); }
+            catch (ArgumentException exception)
+            {
+                failureReason = exception.Message;
+                return false;
+            }
+            if (!IsAllowedFinalKind(vertices, kind, config.Difficulty))
+            {
+                failureReason = "Final shape kind failed.";
                 return false;
             }
             failureReason = string.Empty;
@@ -491,92 +723,79 @@ namespace HATAGONG.Phase3
 
         public static Phase3GeneratedShapeKind ClassifyShape(IReadOnlyList<Phase3GridPoint> vertices)
         {
-            Phase3PolygonValidationResult validation = Phase3Geometry.ValidatePolygon(vertices);
-            if (!validation.IsValid) throw new ArgumentException(validation.Message, nameof(vertices));
-            if (vertices.Count == 3) return Phase3GeneratedShapeKind.Triangle;
-            if (vertices.Count != 4) throw new ArgumentException("The generator catalog supports only triangles and quadrilaterals.", nameof(vertices));
-
-            bool parallelogram = vertices[0].X + vertices[2].X == vertices[1].X + vertices[3].X &&
-                                 vertices[0].Y + vertices[2].Y == vertices[1].Y + vertices[3].Y;
-            if (!parallelogram) return Phase3GeneratedShapeKind.Quadrilateral;
-            long firstX = (long)vertices[1].X - vertices[0].X;
-            long firstY = (long)vertices[1].Y - vertices[0].Y;
-            long secondX = (long)vertices[2].X - vertices[1].X;
-            long secondY = (long)vertices[2].Y - vertices[1].Y;
-            bool rightAngle = firstX * secondX + firstY * secondY == 0L;
-            if (!rightAngle) return Phase3GeneratedShapeKind.Parallelogram;
-            long firstLength = firstX * firstX + firstY * firstY;
-            long secondLength = secondX * secondX + secondY * secondY;
-            return firstLength == secondLength ? Phase3GeneratedShapeKind.Square : Phase3GeneratedShapeKind.Rectangle;
+            if (vertices == null) throw new ArgumentNullException(nameof(vertices));
+            IReadOnlyList<Phase3GridPoint> normalized = Phase3Geometry.NormalizeCounterClockwise(vertices);
+            if (normalized.Count == 3)
+            {
+                for (int i = 0; i < 3; i++)
+                    if (Perpendicular(Edge(normalized, i), Edge(normalized, (i + 1) % 3)))
+                        return Phase3GeneratedShapeKind.RightTriangle;
+                throw new ArgumentException("Only right triangles are supported.", nameof(vertices));
+            }
+            if (normalized.Count != 4) throw new ArgumentException("Only triangles and quadrilaterals are supported.", nameof(vertices));
+            Vector e0 = Edge(normalized, 0);
+            Vector e1 = Edge(normalized, 1);
+            Vector e2 = Edge(normalized, 2);
+            Vector e3 = Edge(normalized, 3);
+            bool oppositeA = Parallel(e0, e2);
+            bool oppositeB = Parallel(e1, e3);
+            bool allEqual = e0.LengthSquared == e1.LengthSquared && e1.LengthSquared == e2.LengthSquared && e2.LengthSquared == e3.LengthSquared;
+            bool right = Perpendicular(e0, e1);
+            if (oppositeA && oppositeB && right && allEqual) return Phase3GeneratedShapeKind.Square;
+            if (oppositeA && oppositeB && right) return Phase3GeneratedShapeKind.Rectangle;
+            if (oppositeA && oppositeB && allEqual) return Phase3GeneratedShapeKind.Rhombus;
+            if (oppositeA && oppositeB) return Phase3GeneratedShapeKind.Parallelogram;
+            if (oppositeA ^ oppositeB) return Phase3GeneratedShapeKind.Trapezoid;
+            throw new ArgumentException("Quadrilateral is not an allowed trapezoid or parallelogram family shape.", nameof(vertices));
         }
 
         public static int DetermineRotationalSymmetryPeriod(IReadOnlyList<Phase3GridPoint> vertices)
         {
-            if (!Phase3Geometry.TryGetCentroid(vertices, out Phase3Point2D centroid))
-                throw new ArgumentException("A valid polygon centroid is required.", nameof(vertices));
-            for (int step = 1; step <= Phase3CoreConstants.FullRotationStepCount; step++)
-            {
-                if (MatchesAfterRotation(vertices, centroid, step) && Phase3RotationStep.IsValidSymmetryPeriod(step)) return step;
-            }
-            return Phase3CoreConstants.FullRotationStepCount;
+            Phase3GeneratedShapeKind kind = ClassifyShape(vertices);
+            if (kind == Phase3GeneratedShapeKind.Square) return 2;
+            if (kind == Phase3GeneratedShapeKind.Rectangle || kind == Phase3GeneratedShapeKind.Rhombus ||
+                kind == Phase3GeneratedShapeKind.Parallelogram) return 4;
+            return 8;
         }
 
-        private static bool MatchesAfterRotation(IReadOnlyList<Phase3GridPoint> vertices, Phase3Point2D centroid, int step)
+        public static string ComputeShapeSignature(IReadOnlyList<Phase3GridPoint> vertices)
         {
-            double radians = -step * Phase3CoreConstants.RotationStepDegrees * Math.PI / 180d;
-            double cosine = Math.Cos(radians);
-            double sine = Math.Sin(radians);
+            if (vertices == null) throw new ArgumentNullException(nameof(vertices));
+            var distances = new List<long>();
             for (int i = 0; i < vertices.Count; i++)
-            {
-                double x = vertices[i].X - centroid.X;
-                double y = vertices[i].Y - centroid.Y;
-                double rotatedX = x * cosine - y * sine + centroid.X;
-                double rotatedY = x * sine + y * cosine + centroid.Y;
-                bool matched = false;
-                for (int candidate = 0; candidate < vertices.Count; candidate++)
-                {
-                    if (Math.Abs(vertices[candidate].X - rotatedX) <= Phase3CoreConstants.ComparisonEpsilon &&
-                        Math.Abs(vertices[candidate].Y - rotatedY) <= Phase3CoreConstants.ComparisonEpsilon)
-                    {
-                        matched = true;
-                        break;
-                    }
-                }
-                if (!matched) return false;
-            }
-            return true;
+                for (int j = i + 1; j < vertices.Count; j++)
+                    distances.Add(vertices[i].DistanceSquaredTo(vertices[j]));
+            long divisor = 0;
+            for (int i = 0; i < distances.Count; i++) divisor = GreatestCommonDivisor(divisor, distances[i]);
+            if (divisor <= 0) throw new ArgumentException("Shape signature requires non-degenerate vertices.", nameof(vertices));
+            for (int i = 0; i < distances.Count; i++) distances[i] /= divisor;
+            distances.Sort();
+            return $"{vertices.Count}:{string.Join(",", distances)}";
         }
 
-        private static Phase3RotationStep CreateInitialRotation(DeterministicRandom random, Phase3RotationStep target, int symmetryPeriod)
+        public static double CalculateMinimumEdgeLength(IReadOnlyList<Phase3GridPoint> vertices)
         {
-            int firstStep = random.NextInt(Phase3CoreConstants.FullRotationStepCount);
-            for (int offset = 0; offset < Phase3CoreConstants.FullRotationStepCount; offset++)
-            {
-                var candidate = new Phase3RotationStep(firstStep + offset);
-                if (!candidate.IsEquivalentTo(target, symmetryPeriod)) return candidate;
-            }
-            throw new InvalidOperationException("No non-equivalent initial rotation exists for the generated shape.");
+            double minimum = double.PositiveInfinity;
+            for (int i = 0; i < vertices.Count; i++)
+                minimum = Math.Min(minimum, Math.Sqrt(vertices[i].DistanceSquaredTo(vertices[(i + 1) % vertices.Count])));
+            return minimum;
         }
 
         public static double CalculateMinimumThickness(IReadOnlyList<Phase3GridPoint> vertices)
         {
-            Phase3PolygonValidationResult validation = Phase3Geometry.ValidatePolygon(vertices);
-            if (!validation.IsValid) throw new ArgumentException(validation.Message, nameof(vertices));
             double minimum = double.PositiveInfinity;
-            for (int edge = 0; edge < vertices.Count; edge++)
+            for (int edgeIndex = 0; edgeIndex < vertices.Count; edgeIndex++)
             {
-                Phase3GridPoint start = vertices[edge];
-                Phase3GridPoint end = vertices[(edge + 1) % vertices.Count];
+                Phase3GridPoint start = vertices[edgeIndex];
+                Phase3GridPoint end = vertices[(edgeIndex + 1) % vertices.Count];
                 double dx = end.X - start.X;
                 double dy = end.Y - start.Y;
                 double length = Math.Sqrt(dx * dx + dy * dy);
-                double normalX = -dy / length;
-                double normalY = dx / length;
                 double minimumProjection = double.PositiveInfinity;
                 double maximumProjection = double.NegativeInfinity;
-                for (int vertex = 0; vertex < vertices.Count; vertex++)
+                for (int i = 0; i < vertices.Count; i++)
                 {
-                    double projection = vertices[vertex].X * normalX + vertices[vertex].Y * normalY;
+                    double projection = (-dy * vertices[i].X + dx * vertices[i].Y) / length;
                     minimumProjection = Math.Min(minimumProjection, projection);
                     maximumProjection = Math.Max(maximumProjection, projection);
                 }
@@ -587,8 +806,6 @@ namespace HATAGONG.Phase3
 
         public static double CalculateMinimumInteriorAngleDegrees(IReadOnlyList<Phase3GridPoint> vertices)
         {
-            Phase3PolygonValidationResult validation = Phase3Geometry.ValidatePolygon(vertices);
-            if (!validation.IsValid) throw new ArgumentException(validation.Message, nameof(vertices));
             double minimum = 180d;
             for (int i = 0; i < vertices.Count; i++)
             {
@@ -599,131 +816,175 @@ namespace HATAGONG.Phase3
                 double ay = previous.Y - current.Y;
                 double bx = next.X - current.X;
                 double by = next.Y - current.Y;
-                double denominator = Math.Sqrt((ax * ax + ay * ay) * (bx * bx + by * by));
-                if (denominator <= Phase3CoreConstants.ComparisonEpsilon) return 0d;
-                double cosine = Math.Max(-1d, Math.Min(1d, (ax * bx + ay * by) / denominator));
+                double cosine = (ax * bx + ay * by) /
+                    (Math.Sqrt(ax * ax + ay * ay) * Math.Sqrt(bx * bx + by * by));
+                cosine = Math.Max(-1d, Math.Min(1d, cosine));
                 minimum = Math.Min(minimum, Math.Acos(cosine) * 180d / Math.PI);
             }
             return minimum;
         }
 
-        private static string BuildCanonicalStructureText(string generatorVersion, GameDifficulty difficulty, IReadOnlyList<Phase3GeneratedPieceData> pieces)
+        private static Phase3PuzzleStructureSignature BuildStructureSignature(
+            GameDifficulty difficulty,
+            IReadOnlyList<Phase3GeneratedPieceData> pieces)
         {
-            var descriptors = new List<string>(pieces.Count);
+            var areas = new List<double>();
+            var perimeters = new List<double>();
+            var counts = new int[Enum.GetValues(typeof(Phase3GeneratedShapeKind)).Length];
+            double totalPerimeter = 0d;
             for (int i = 0; i < pieces.Count; i++)
             {
-                var builder = new StringBuilder();
-                for (int vertex = 0; vertex < pieces[i].Vertices.Count; vertex++)
-                {
-                    Phase3GridPoint point = pieces[i].Vertices[vertex];
-                    builder.Append(point.X.ToString(CultureInfo.InvariantCulture)).Append(',')
-                        .Append(point.Y.ToString(CultureInfo.InvariantCulture)).Append(';');
-                }
-                builder.Append("r:").Append(pieces[i].TargetRotation.Value.ToString(CultureInfo.InvariantCulture));
-                descriptors.Add(builder.ToString());
-            }
-            descriptors.Sort(StringComparer.Ordinal);
-            return $"{generatorVersion}|grid:{Phase3CoreConstants.LogicalGridSize}|difficulty:{(int)difficulty}|{string.Join("|", descriptors)}";
-        }
-
-        private static Phase3PuzzleStructureSignature BuildSignature(GameDifficulty difficulty, IReadOnlyList<Phase3GeneratedPieceData> pieces)
-        {
-            var areas = new List<double>(pieces.Count);
-            var perimeters = new List<double>(pieces.Count);
-            int[] kinds = new int[Enum.GetValues(typeof(Phase3GeneratedShapeKind)).Length];
-            double perimeterSum = 0d;
-            for (int i = 0; i < pieces.Count; i++)
-            {
-                double perimeter = PolygonPerimeter(pieces[i].Vertices);
                 areas.Add(pieces[i].Area);
+                double perimeter = 0d;
+                for (int v = 0; v < pieces[i].Vertices.Count; v++)
+                    perimeter += Math.Sqrt(pieces[i].Vertices[v].DistanceSquaredTo(
+                        pieces[i].Vertices[(v + 1) % pieces[i].Vertices.Count]));
                 perimeters.Add(perimeter);
-                perimeterSum += perimeter;
-                kinds[(int)pieces[i].ShapeKind]++;
+                totalPerimeter += perimeter;
+                counts[(int)pieces[i].ShapeKind]++;
             }
-            double outerPerimeter = Phase3CoreConstants.LogicalGridSize * 4d;
-            return new Phase3PuzzleStructureSignature(difficulty, pieces.Count, areas, perimeters, (perimeterSum - outerPerimeter) * 0.5d, kinds);
+            double internalBoundary = (totalPerimeter - Phase3CoreConstants.LogicalGridSize * 4d) * 0.5d;
+            return new Phase3PuzzleStructureSignature(difficulty, pieces.Count, areas, perimeters, internalBoundary, counts);
         }
 
-        private static double PolygonPerimeter(IReadOnlyList<Phase3GridPoint> vertices)
+        private static Vector Edge(IReadOnlyList<Phase3GridPoint> vertices, int index)
         {
-            double perimeter = 0d;
-            for (int i = 0; i < vertices.Count; i++)
-            {
-                Phase3GridPoint current = vertices[i];
-                Phase3GridPoint next = vertices[(i + 1) % vertices.Count];
-                long dx = (long)next.X - current.X;
-                long dy = (long)next.Y - current.Y;
-                perimeter += Math.Sqrt(dx * dx + dy * dy);
-            }
-            return perimeter;
+            Phase3GridPoint start = vertices[index];
+            Phase3GridPoint end = vertices[(index + 1) % vertices.Count];
+            return new Vector(end.X - start.X, end.Y - start.Y);
+        }
+
+        private static bool Parallel(Vector first, Vector second) => first.X * second.Y - first.Y * second.X == 0;
+        private static bool Perpendicular(Vector first, Vector second) => first.X * second.X + first.Y * second.Y == 0;
+
+        private static string BuildAbsolutePolygonKey(IReadOnlyList<Phase3GridPoint> vertices)
+        {
+            IReadOnlyList<Phase3GridPoint> canonical = CanonicalizeRegionVertices(vertices);
+            var values = new string[canonical.Count];
+            for (int i = 0; i < canonical.Count; i++) values[i] = $"{canonical[i].X},{canonical[i].Y}";
+            return string.Join(";", values);
         }
 
         private static string ComputeSha256(string value)
         {
-            using (SHA256 sha256 = SHA256.Create())
+            using (SHA256 sha = SHA256.Create())
             {
-                byte[] bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(value));
+                byte[] bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(value));
                 var builder = new StringBuilder(bytes.Length * 2);
                 for (int i = 0; i < bytes.Length; i++) builder.Append(bytes[i].ToString("x2", CultureInfo.InvariantCulture));
                 return builder.ToString();
             }
         }
 
-        private static ulong CreateAttemptSeed(long seed, GameDifficulty difficulty, int attempt)
+        private static ulong CreateAttemptSeed(long requestedSeed, GameDifficulty difficulty, int attemptIndex) =>
+            Mix(unchecked((ulong)requestedSeed) ^ ((ulong)(int)difficulty << 48) ^ (ulong)(attemptIndex + 1) * 0xD6E8FEB86659FD93UL);
+
+        private static ulong Mix(ulong value)
         {
-            ulong value = unchecked((ulong)seed) ^ 0x9E3779B97F4A7C15UL;
-            value ^= (ulong)(int)difficulty * 0xBF58476D1CE4E5B9UL;
-            value ^= (ulong)(attempt + 1) * 0x94D049BB133111EBUL;
             value ^= value >> 30;
             value *= 0xBF58476D1CE4E5B9UL;
             value ^= value >> 27;
             value *= 0x94D049BB133111EBUL;
-            value ^= value >> 31;
-            return value == 0UL ? 0xD1B54A32D192ED03UL : value;
+            return value ^ value >> 31;
         }
 
-        private static Phase3GridPoint P(int x, int y) => new Phase3GridPoint(x, y);
+        private static long GreatestCommonDivisor(long left, long right)
+        {
+            left = Math.Abs(left);
+            right = Math.Abs(right);
+            while (right != 0)
+            {
+                long temporary = left % right;
+                left = right;
+                right = temporary;
+            }
+            return left;
+        }
+
+        private static IReadOnlyList<Phase3GridPoint> CanonicalizeRegionVertices(
+            IReadOnlyList<Phase3GridPoint> vertices)
+        {
+            var normalized = new List<Phase3GridPoint>(vertices);
+            if (normalized.Count > 1 && normalized[0] == normalized[normalized.Count - 1])
+                normalized.RemoveAt(normalized.Count - 1);
+            if (SignedDoubleAreaUnchecked(normalized) < 0L) normalized.Reverse();
+            int start = 0;
+            for (int i = 1; i < normalized.Count; i++)
+                if (normalized[i] < normalized[start]) start = i;
+            var canonical = new Phase3GridPoint[normalized.Count];
+            for (int i = 0; i < canonical.Length; i++) canonical[i] = normalized[(start + i) % normalized.Count];
+            return Array.AsReadOnly(canonical);
+        }
+
+        private static long SignedDoubleAreaUnchecked(IReadOnlyList<Phase3GridPoint> vertices)
+        {
+            long area = 0L;
+            for (int i = 0; i < vertices.Count; i++)
+            {
+                Phase3GridPoint next = vertices[(i + 1) % vertices.Count];
+                area += (long)vertices[i].X * next.Y - (long)next.X * vertices[i].Y;
+            }
+            return area;
+        }
+
+        private readonly struct Vector
+        {
+            public Vector(long x, long y) { X = x; Y = y; }
+            public long X { get; }
+            public long Y { get; }
+            public long LengthSquared => X * X + Y * Y;
+        }
 
         private readonly struct Region : IComparable<Region>
         {
             public Region(IEnumerable<Phase3GridPoint> vertices)
             {
-                IReadOnlyList<Phase3GridPoint> canonical = Phase3Geometry.CanonicalizeVertices(new List<Phase3GridPoint>(vertices));
-                var copied = new Phase3GridPoint[canonical.Count];
-                for (int i = 0; i < canonical.Count; i++) copied[i] = canonical[i];
-                Vertices = Array.AsReadOnly(copied);
-                Bounds = Phase3Geometry.GetBounds(Vertices);
-                Phase3Geometry.TryGetCentroid(Vertices, out Phase3Point2D centroid);
-                Centroid = centroid;
+                Vertices = CanonicalizeRegionVertices(new List<Phase3GridPoint>(vertices));
+                Area = Math.Abs(SignedDoubleAreaUnchecked(Vertices)) * 0.5d;
+                Key = BuildAbsolutePolygonKey(Vertices);
             }
             public IReadOnlyList<Phase3GridPoint> Vertices { get; }
-            private Phase3Bounds2D Bounds { get; }
-            private Phase3Point2D Centroid { get; }
-            public int CompareTo(Region other)
+            public double Area { get; }
+            public string Key { get; }
+            public int CompareTo(Region other) => StringComparer.Ordinal.Compare(Key, other.Key);
+        }
+
+        private readonly struct SplitOption
+        {
+            public SplitOption(int regionIndex, Region first, Region second, int score, ulong order)
             {
-                int y = Centroid.Y.CompareTo(other.Centroid.Y);
-                if (y != 0) return y;
-                int x = Centroid.X.CompareTo(other.Centroid.X);
-                if (x != 0) return x;
-                return Phase3Geometry.SignedDoubleArea(Vertices).CompareTo(Phase3Geometry.SignedDoubleArea(other.Vertices));
+                RegionIndex = regionIndex;
+                First = first;
+                Second = second;
+                Score = score;
+                Order = order;
             }
-            public Region Transform(bool mirrorX, bool mirrorY)
-            {
-                var transformed = new Phase3GridPoint[Vertices.Count];
-                for (int i = 0; i < Vertices.Count; i++)
-                {
-                    int x = mirrorX ? Phase3CoreConstants.LogicalGridSize - Vertices[i].X : Vertices[i].X;
-                    int y = mirrorY ? Phase3CoreConstants.LogicalGridSize - Vertices[i].Y : Vertices[i].Y;
-                    transformed[i] = new Phase3GridPoint(x, y);
-                }
-                return new Region(transformed);
-            }
+            public int RegionIndex { get; }
+            public Region First { get; }
+            public Region Second { get; }
+            public int Score { get; }
+            public ulong Order { get; }
+        }
+
+        private sealed class SearchState
+        {
+            public SearchState(int budget) { BacktrackingBudget = budget; }
+            public int BacktrackingBudget { get; }
+            public int BacktrackingCount { get; set; }
+            public int ExhaustedCandidateCount { get; set; }
+            public int BacktrackingBudgetExhaustionCount { get; set; }
+            public int CurrentShapeDuplicateRejectionCount { get; set; }
+            public string LastFailure { get; set; } = string.Empty;
         }
 
         private readonly struct Candidate
         {
-            public Candidate(string puzzleId, string canonicalHash, Phase3PuzzleStructureSignature signature,
-                Phase3PuzzleDefinition puzzle, IReadOnlyList<Phase3GeneratedPieceData> generatedPieces,
+            public Candidate(
+                string puzzleId,
+                string canonicalHash,
+                Phase3PuzzleStructureSignature signature,
+                Phase3PuzzleDefinition puzzle,
+                IReadOnlyList<Phase3GeneratedPieceData> generatedPieces,
                 IReadOnlyList<Phase3InitialPieceRotation> initialRotations)
             {
                 PuzzleId = puzzleId;
@@ -741,28 +1002,104 @@ namespace HATAGONG.Phase3
             public IReadOnlyList<Phase3InitialPieceRotation> InitialRotations { get; }
         }
 
+        private readonly struct GenerationAttempt
+        {
+            private GenerationAttempt(
+                bool succeeded,
+                ulong effectiveSeed,
+                int cycles,
+                int backtracking,
+                int exhausted,
+                int budgetExhaustions,
+                int shapeDuplicateRejections,
+                Candidate candidate,
+                string failure)
+            {
+                Succeeded = succeeded;
+                EffectiveSeed = effectiveSeed;
+                GenerationCycles = cycles;
+                BacktrackingCount = backtracking;
+                ExhaustedCandidateCount = exhausted;
+                BacktrackingBudgetExhaustionCount = budgetExhaustions;
+                CurrentShapeDuplicateRejectionCount = shapeDuplicateRejections;
+                Candidate = candidate;
+                FailureReason = failure ?? string.Empty;
+            }
+            public bool Succeeded { get; }
+            public ulong EffectiveSeed { get; }
+            public int GenerationCycles { get; }
+            public int BacktrackingCount { get; }
+            public int ExhaustedCandidateCount { get; }
+            public int BacktrackingBudgetExhaustionCount { get; }
+            public int CurrentShapeDuplicateRejectionCount { get; }
+            public Candidate Candidate { get; }
+            public string FailureReason { get; }
+            public static GenerationAttempt Success(
+                ulong seed, int cycles, int backtracking, int exhausted, int budgetExhaustions,
+                int shapeDuplicateRejections, Candidate candidate) =>
+                new GenerationAttempt(
+                    true, seed, cycles, backtracking, exhausted, budgetExhaustions,
+                    shapeDuplicateRejections, candidate, string.Empty);
+            public static GenerationAttempt Failed(
+                ulong seed, string failure, int backtracking, int exhausted,
+                int budgetExhaustions, int shapeDuplicateRejections, int cycles) =>
+                new GenerationAttempt(
+                    false, seed, cycles, backtracking, exhausted, budgetExhaustions,
+                    shapeDuplicateRejections, default, failure);
+        }
+
+        private sealed class ShapeHistoryProfile
+        {
+            private readonly HashSet<string> previous = new HashSet<string>(StringComparer.Ordinal);
+            private readonly Dictionary<string, int> olderOccurrences = new Dictionary<string, int>(StringComparer.Ordinal);
+
+            public static ShapeHistoryProfile Empty { get; } = new ShapeHistoryProfile(null);
+
+            public ShapeHistoryProfile(IReadOnlyList<IReadOnlyList<string>> history)
+            {
+                if (history == null || history.Count == 0) return;
+                int first = Math.Max(0, history.Count - 5);
+                int previousIndex = history.Count - 1;
+                for (int puzzleIndex = first; puzzleIndex < history.Count; puzzleIndex++)
+                {
+                    IReadOnlyList<string> signatures = history[puzzleIndex];
+                    for (int signatureIndex = 0; signatureIndex < signatures.Count; signatureIndex++)
+                    {
+                        string signature = signatures[signatureIndex];
+                        if (puzzleIndex == previousIndex) previous.Add(signature);
+                        else
+                        {
+                            olderOccurrences.TryGetValue(signature, out int count);
+                            olderOccurrences[signature] = count + 1;
+                        }
+                    }
+                }
+            }
+
+            public bool IsForbiddenByPreviousPuzzle(string signature) => previous.Contains(signature);
+
+            public int WeightFor(string signature)
+            {
+                if (!olderOccurrences.TryGetValue(signature, out int count)) return 100;
+                if (count == 1) return 60;
+                if (count == 2) return 35;
+                return 15;
+            }
+        }
+
         private sealed class DeterministicRandom
         {
             private ulong state;
-            public DeterministicRandom(ulong seed) => state = seed;
-            public int NextInt(int exclusiveMaximum)
+            public DeterministicRandom(ulong seed) { state = seed == 0UL ? 0x9E3779B97F4A7C15UL : seed; }
+            public ulong NextUInt64()
             {
-                if (exclusiveMaximum <= 0) throw new ArgumentOutOfRangeException(nameof(exclusiveMaximum));
-                uint bound = (uint)exclusiveMaximum;
-                uint threshold = unchecked((uint)(0u - bound)) % bound;
-                for (int retry = 0; retry < 8; retry++)
-                {
-                    uint value = NextUInt32();
-                    if (value >= threshold) return (int)(value % bound);
-                }
-                return (int)(NextUInt32() % bound);
+                state += 0x9E3779B97F4A7C15UL;
+                return Mix(state);
             }
-            private uint NextUInt32()
+            public int NextInt(int maximumExclusive)
             {
-                state ^= state >> 12;
-                state ^= state << 25;
-                state ^= state >> 27;
-                return (uint)((state * 2685821657736338717UL) >> 32);
+                if (maximumExclusive <= 0) throw new ArgumentOutOfRangeException(nameof(maximumExclusive));
+                return (int)(NextUInt64() % (uint)maximumExclusive);
             }
         }
     }

@@ -10,6 +10,7 @@ namespace HATAGONG.Phase3
         AllAllowedTargetsOccupied,
         OutOfSnapDistance,
         RotationMismatch,
+        GeometryMismatch,
         InvalidInput
     }
 

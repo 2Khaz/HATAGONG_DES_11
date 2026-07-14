@@ -7,11 +7,14 @@ namespace HATAGONG.Phase3
 {
     public enum Phase3GeneratedShapeKind
     {
-        Triangle = 0,
-        Quadrilateral,
+        RightTriangle = 0,
+        Triangle = RightTriangle,
+        Trapezoid = 1,
+        Quadrilateral = Trapezoid,
         Rectangle,
         Square,
-        Parallelogram
+        Parallelogram,
+        Rhombus
     }
 
     public sealed class Phase3GeneratedPieceData
@@ -40,6 +43,7 @@ namespace HATAGONG.Phase3
             RotationalSymmetryPeriodSteps = rotationalSymmetryPeriodSteps;
             TargetRotation = targetRotation;
             InitialRotation = initialRotation;
+            ShapeSignature = Phase3PuzzleGenerator.ComputeShapeSignature(Vertices);
         }
 
         public string PieceId { get; }
@@ -49,6 +53,7 @@ namespace HATAGONG.Phase3
         public int RotationalSymmetryPeriodSteps { get; }
         public Phase3RotationStep TargetRotation { get; }
         public Phase3RotationStep InitialRotation { get; }
+        public string ShapeSignature { get; }
         public double Area => Phase3Geometry.AbsoluteArea(Vertices);
 
         private static IReadOnlyList<Phase3GridPoint> NormalizeInputVertices(IEnumerable<Phase3GridPoint> vertices)
@@ -71,6 +76,9 @@ namespace HATAGONG.Phase3
             double minimumPieceArea,
             double minimumInteriorAngleDegrees,
             double minimumThickness,
+            double minimumEdgeLength,
+            int cycleBudget,
+            int backtrackingBudget,
             Phase3DifficultyRuleSet partitionRules)
         {
             Difficulty = difficulty;
@@ -78,6 +86,9 @@ namespace HATAGONG.Phase3
             MinimumPieceArea = minimumPieceArea;
             MinimumInteriorAngleDegrees = minimumInteriorAngleDegrees;
             MinimumThickness = minimumThickness;
+            MinimumEdgeLength = minimumEdgeLength;
+            CycleBudget = cycleBudget;
+            BacktrackingBudget = backtrackingBudget;
             PartitionRules = partitionRules;
         }
 
@@ -86,6 +97,9 @@ namespace HATAGONG.Phase3
         public double MinimumPieceArea { get; }
         public double MinimumInteriorAngleDegrees { get; }
         public double MinimumThickness { get; }
+        public double MinimumEdgeLength { get; }
+        public int CycleBudget { get; }
+        public int BacktrackingBudget { get; }
         public Phase3DifficultyRuleSet PartitionRules { get; }
 
         public static Phase3PuzzleGeneratorDifficultyConfig For(GameDifficulty difficulty)
@@ -93,11 +107,11 @@ namespace HATAGONG.Phase3
             switch (difficulty)
             {
                 case GameDifficulty.Easy:
-                    return Create(difficulty, 8, 18d, 30d, 4d, 45d, 2.4d);
+                    return Create(difficulty, 8, 14d, 30d, 2.5d, 2d, 32, 16, 45d, 3.5d);
                 case GameDifficulty.Normal:
-                    return Create(difficulty, 10, 12d, 30d, 3.5d, 40d, 2.5d);
+                    return Create(difficulty, 10, 10d, 30d, 2d, 1.5d, 64, 32, 40d, 4d);
                 case GameDifficulty.Hard:
-                    return Create(difficulty, 12, 10d, 30d, 3.5d, 35d, 2.6d);
+                    return Create(difficulty, 12, 7d, 30d, 1.5d, 1d, 96, 48, 35d, 5d);
                 default:
                     throw new ArgumentOutOfRangeException(nameof(difficulty), difficulty, "Generator difficulty must be Easy, Normal, or Hard.");
             }
@@ -109,12 +123,17 @@ namespace HATAGONG.Phase3
             double minimumArea,
             double minimumAngle,
             double minimumThickness,
+            double minimumEdgeLength,
+            int cycleBudget,
+            int backtrackingBudget,
             double snapDistance,
             double maximumAspectRatio)
         {
             double minimumRatio = minimumArea / Phase3CoreConstants.LogicalFieldArea;
             var rules = new Phase3DifficultyRuleSet(pieceCount, snapDistance, minimumRatio, 0.25d, maximumAspectRatio, 4);
-            return new Phase3PuzzleGeneratorDifficultyConfig(difficulty, pieceCount, minimumArea, minimumAngle, minimumThickness, rules);
+            return new Phase3PuzzleGeneratorDifficultyConfig(
+                difficulty, pieceCount, minimumArea, minimumAngle, minimumThickness, minimumEdgeLength,
+                cycleBudget, backtrackingBudget, rules);
         }
     }
 
@@ -171,7 +190,8 @@ namespace HATAGONG.Phase3
             long seed,
             GameDifficulty difficulty,
             IEnumerable<string> recentCanonicalHashes = null,
-            int maximumAttempts = Phase3PuzzleGenerator.DefaultMaximumAttempts)
+            int maximumAttempts = Phase3PuzzleGenerator.DefaultMaximumAttempts,
+            IEnumerable<IEnumerable<string>> recentShapeSignaturePuzzles = null)
         {
             if (maximumAttempts < 1 || maximumAttempts > Phase3PuzzleGenerator.MaximumAllowedAttempts)
                 throw new ArgumentOutOfRangeException(nameof(maximumAttempts), maximumAttempts, "Maximum attempts must be between 1 and 64.");
@@ -183,12 +203,24 @@ namespace HATAGONG.Phase3
                 foreach (string hash in recentCanonicalHashes)
                     if (!string.IsNullOrWhiteSpace(hash)) hashes.Add(hash.Trim());
             RecentCanonicalHashes = hashes.AsReadOnly();
+            var shapeHistory = new List<IReadOnlyList<string>>();
+            if (recentShapeSignaturePuzzles != null)
+                foreach (IEnumerable<string> puzzleSignatures in recentShapeSignaturePuzzles)
+                {
+                    var signatures = new List<string>();
+                    if (puzzleSignatures != null)
+                        foreach (string signature in puzzleSignatures)
+                            if (!string.IsNullOrWhiteSpace(signature)) signatures.Add(signature.Trim());
+                    shapeHistory.Add(signatures.AsReadOnly());
+                }
+            RecentShapeSignaturePuzzles = shapeHistory.AsReadOnly();
         }
 
         public long Seed { get; }
         public GameDifficulty Difficulty { get; }
         public int MaximumAttempts { get; }
         public IReadOnlyList<string> RecentCanonicalHashes { get; }
+        public IReadOnlyList<IReadOnlyList<string>> RecentShapeSignaturePuzzles { get; }
     }
 
     public enum Phase3PuzzleGenerationFailure
@@ -216,6 +248,34 @@ namespace HATAGONG.Phase3
             Phase3PuzzleDefinition puzzle,
             IEnumerable<Phase3GeneratedPieceData> generatedPieces,
             IEnumerable<Phase3InitialPieceRotation> initialRotations)
+            : this(
+                succeeded, failure, failureReason, requestedSeed, effectiveSeed, attemptIndex, difficulty,
+                attemptsUsed, puzzleId, canonicalHash, signature, puzzle, generatedPieces, initialRotations,
+                0, 0, 0, 0, 0, 0)
+        {
+        }
+
+        private Phase3PuzzleGenerationResult(
+            bool succeeded,
+            Phase3PuzzleGenerationFailure failure,
+            string failureReason,
+            long requestedSeed,
+            ulong effectiveSeed,
+            int attemptIndex,
+            GameDifficulty difficulty,
+            int attemptsUsed,
+            string puzzleId,
+            string canonicalHash,
+            Phase3PuzzleStructureSignature signature,
+            Phase3PuzzleDefinition puzzle,
+            IEnumerable<Phase3GeneratedPieceData> generatedPieces,
+            IEnumerable<Phase3InitialPieceRotation> initialRotations,
+            int generationCycles,
+            int backtrackingCount,
+            int exhaustedCandidateCount,
+            int backtrackingBudgetExhaustionCount,
+            int currentShapeDuplicateRejectionCount,
+            int exactHistoryRejectionCount)
         {
             Succeeded = succeeded;
             Failure = failure;
@@ -231,6 +291,12 @@ namespace HATAGONG.Phase3
             Puzzle = puzzle;
             GeneratedPieces = Array.AsReadOnly(generatedPieces == null ? Array.Empty<Phase3GeneratedPieceData>() : new List<Phase3GeneratedPieceData>(generatedPieces).ToArray());
             InitialRotations = Array.AsReadOnly(initialRotations == null ? Array.Empty<Phase3InitialPieceRotation>() : new List<Phase3InitialPieceRotation>(initialRotations).ToArray());
+            GenerationCycles = generationCycles;
+            BacktrackingCount = backtrackingCount;
+            ExhaustedCandidateCount = exhaustedCandidateCount;
+            BacktrackingBudgetExhaustionCount = backtrackingBudgetExhaustionCount;
+            CurrentShapeDuplicateRejectionCount = currentShapeDuplicateRejectionCount;
+            ExactHistoryRejectionCount = exactHistoryRejectionCount;
         }
 
         public bool Succeeded { get; }
@@ -249,6 +315,12 @@ namespace HATAGONG.Phase3
         public Phase3PuzzleDefinition Puzzle { get; }
         public IReadOnlyList<Phase3GeneratedPieceData> GeneratedPieces { get; }
         public IReadOnlyList<Phase3InitialPieceRotation> InitialRotations { get; }
+        public int GenerationCycles { get; }
+        public int BacktrackingCount { get; }
+        public int ExhaustedCandidateCount { get; }
+        public int BacktrackingBudgetExhaustionCount { get; }
+        public int CurrentShapeDuplicateRejectionCount { get; }
+        public int ExactHistoryRejectionCount { get; }
 
         internal static Phase3PuzzleGenerationResult Success(
             long requestedSeed,
@@ -261,8 +333,18 @@ namespace HATAGONG.Phase3
             Phase3PuzzleStructureSignature signature,
             Phase3PuzzleDefinition puzzle,
             IEnumerable<Phase3GeneratedPieceData> generatedPieces,
-            IEnumerable<Phase3InitialPieceRotation> initialRotations) =>
-            new Phase3PuzzleGenerationResult(true, Phase3PuzzleGenerationFailure.None, string.Empty, requestedSeed, effectiveSeed, attemptIndex, difficulty, attemptsUsed, puzzleId, canonicalHash, signature, puzzle, generatedPieces, initialRotations);
+            IEnumerable<Phase3InitialPieceRotation> initialRotations,
+            int generationCycles = 0,
+            int backtrackingCount = 0,
+            int exhaustedCandidateCount = 0,
+            int backtrackingBudgetExhaustionCount = 0,
+            int currentShapeDuplicateRejectionCount = 0,
+            int exactHistoryRejectionCount = 0) =>
+            new Phase3PuzzleGenerationResult(
+                true, Phase3PuzzleGenerationFailure.None, string.Empty, requestedSeed, effectiveSeed, attemptIndex,
+                difficulty, attemptsUsed, puzzleId, canonicalHash, signature, puzzle, generatedPieces, initialRotations,
+                generationCycles, backtrackingCount, exhaustedCandidateCount,
+                backtrackingBudgetExhaustionCount, currentShapeDuplicateRejectionCount, exactHistoryRejectionCount);
 
         internal static Phase3PuzzleGenerationResult Failed(
             Phase3PuzzleGenerationFailure failure,

@@ -18,6 +18,7 @@ namespace HATAGONG.Phase3
         SnapAllTargetsOccupied,
         SnapOutOfDistance,
         SnapRotationMismatch,
+        SnapGeometryMismatch,
         InternalStateConflict
     }
 }

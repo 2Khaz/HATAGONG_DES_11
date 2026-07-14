@@ -5764,17 +5764,18 @@ MonoBehaviour:
   m_GameObject: {fileID: 2100000000}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 3012a7b8c9d0e1f24356700000000012, type: 3}
+  m_Script: {fileID: 11500000, guid: b2000000000000000000000000000050, type: 3}
   m_Name:
-  m_EditorClassIdentifier: Assembly-CSharp::HATAGONG.Phase3.Phase3PhaseAdapter
+  m_EditorClassIdentifier: Assembly-CSharp::HATAGONG.Phase3Tangram.Phase3TangramManager
   canvas: {fileID: 610125968}
   graphicRaycaster: {fileID: 610125966}
   eventSystem: {fileID: 672231060}
+  worldCamera: {fileID: 1222313156}
   scoreController: {fileID: 1039023718}
   deckHost: {fileID: 698792667}
   deckPanel: {fileID: 698792668}
   deckSprite: {fileID: 21300000, guid: 35d185d63b3da8a419714e52d16e3e22, type: 3}
-  sessionSource: {fileID: 0}
+  requestedSeed: 260714
 --- !u!1 &1986613477
 GameObject:
   m_ObjectHideFlags: 0

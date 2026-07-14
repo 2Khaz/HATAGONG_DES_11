@@ -1,0 +1,691 @@
+using System;
+using System.Collections.Generic;
+using HATAGONG.GameFlow;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
+using UnityEngine.Serialization;
+using UnityEngine.UI;
+
+namespace HATAGONG.Phase3Tangram
+{
+    public sealed class Phase3TangramManager : MonoBehaviour, IGamePhase
+    {
+        private static readonly Color[] PieceColors =
+        {
+            new Color(1f, 0.31f, 0.28f), new Color(0.12f, 0.72f, 0.92f), new Color(1f, 0.78f, 0.12f), new Color(0.24f, 0.86f, 0.45f),
+            new Color(0.67f, 0.43f, 0.96f), new Color(1f, 0.47f, 0.13f), new Color(0.18f, 0.82f, 0.76f), new Color(0.94f, 0.25f, 0.57f)
+        };
+
+        [SerializeField] private Canvas canvas;
+        [SerializeField] private GraphicRaycaster graphicRaycaster;
+        [SerializeField] private EventSystem eventSystem;
+        [SerializeField] private Camera worldCamera;
+        [SerializeField] private GameScoreController scoreController;
+        [SerializeField] private RectTransform deckHost;
+        [SerializeField] private Image deckPanel;
+        [SerializeField] private Sprite deckSprite;
+        [SerializeField] private bool useFixedSeedForDebug;
+        [FormerlySerializedAs("requestedSeed")]
+        [SerializeField] private long fixedSeed = 260714;
+
+        private readonly List<Phase3TangramPiece> pieces = new List<Phase3TangramPiece>();
+        private readonly List<TangramTargetAssignment> targets = new List<TangramTargetAssignment>();
+        private RectTransform field;
+        private RectTransform deck;
+        private RectTransform[] deckSlots;
+        private Button previousButton;
+        private Button nextButton;
+        private Text pageLabel;
+        private RawImage completionImage;
+        private Transform worldRoot;
+        private Phase3TangramGuide guide;
+        private Phase3TangramPiece selectedPiece;
+        private Phase3TangramPiece draggingPiece;
+        private TangramPieceState dragOriginState;
+        private int page;
+        private int looseSortingSequence;
+        private bool built;
+        private bool inputRequested;
+        private bool focusSuspended;
+        private bool pauseSuspended;
+        private bool canvasAdjusted;
+        private RenderMode originalRenderMode;
+        private Camera originalCanvasCamera;
+        private float originalPlaneDistance;
+        private GameDifficulty difficulty;
+        private long activeSeed;
+        private Vector3 boardOriginWorld;
+        private Vector3 boardUnitXWorld;
+        private Vector3 boardUnitYWorld;
+        private bool boardFrameReady;
+
+        public GamePhaseId PhaseId => GamePhaseId.Phase3;
+        public bool IsPrepared { get; private set; }
+        public bool IsRunning { get; private set; }
+        public bool IsCleared { get; private set; }
+        public bool IsExitReady { get; private set; }
+        public float GuideWorldWidth => Mathf.Max(0.003f, BoardWorldSide * 0.004f);
+        public int PieceCount => pieces.Count;
+        public int GuideCount => guide?.PolygonCount ?? 0;
+        public long ActiveSeed => activeSeed;
+        public event Action PhaseCleared;
+        public event Action PhaseExitReady;
+
+        public bool Prepare(GameRunContext context)
+        {
+            SetInputEnabled(false);
+            IsPrepared = IsRunning = IsCleared = IsExitReady = false;
+            if (!context.IsValid || !canvas || !graphicRaycaster || !eventSystem || !worldCamera || !scoreController || !deckHost || !deckPanel || !deckSprite) return false;
+            try
+            {
+                EnsureBuilt();
+                activeSeed = useFixedSeedForDebug ? fixedSeed : CreateRandomSeed();
+                TangramGenerationResult generated = Phase3TangramGenerator.Generate(context.Difficulty, activeSeed);
+                if (!generated.Success) { Debug.LogError($"[Phase3Tangram] Generation failed: {generated.FailureReason}", this); return false; }
+                difficulty = context.Difficulty;
+                int expectedCount = Phase3TangramGenerator.PieceCount(difficulty);
+                if (generated.Pieces.Count != expectedCount) throw new InvalidOperationException($"Generated piece count mismatch: expected={expectedCount}, actual={generated.Pieces.Count}.");
+                BuildPuzzle(generated);
+                IsPrepared = true;
+                SetRuntimeVisible(false);
+                gameObject.SetActive(false);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError("[Phase3Tangram] Prepare failed: " + exception.Message, this);
+                return false;
+            }
+        }
+
+        public bool Activate()
+        {
+            if (!IsPrepared || IsCleared || !built) return false;
+            gameObject.SetActive(true);
+            AdjustCanvasForWorldPieces();
+            SetRuntimeVisible(true);
+            IsRunning = true;
+            Canvas.ForceUpdateCanvases();
+            RefreshLayout();
+            ApplyInputGate();
+            Debug.Log($"[Phase3Tangram][Bind] difficulty={difficulty},seed={activeSeed},fixedSeed={useFixedSeedForDebug},pieces={pieces.Count},expected={Phase3TangramGenerator.PieceCount(difficulty)},visuals={pieces.Count},guides={GuideCount},deckPages={(pieces.Count + 3) / 4},boardWidth={boardUnitXWorld.magnitude * Phase3TangramGenerator.BoardSize:F5},boardHeight={boardUnitYWorld.magnitude * Phase3TangramGenerator.BoardSize:F5},meshColliderSharedShape=true,uvPieces=0,legacyRuntime=0", this);
+            return true;
+        }
+
+        public void Deactivate()
+        {
+            SetInputEnabled(false);
+            IsRunning = false;
+            selectedPiece = draggingPiece = null;
+            SetRuntimeVisible(false);
+            RestoreCanvas();
+            gameObject.SetActive(false);
+        }
+
+        public void SetInputEnabled(bool enabled) { inputRequested = enabled; ApplyInputGate(); }
+
+        public Vector3 LogicalToWorld(Vector2 logical)
+        {
+            if (!boardFrameReady) RefreshBoardFrame();
+            return boardOriginWorld + boardUnitXWorld * logical.x + boardUnitYWorld * logical.y;
+        }
+
+        public Vector3 LogicalToGuideWorld(Vector2 logical)
+        {
+            return LogicalToWorld(logical) - worldCamera.transform.forward * Mathf.Max(0.002f, BoardWorldSide * 0.001f);
+        }
+
+        public void SelectPieceAt(Vector2 screenPosition)
+        {
+            selectedPiece = null;
+            if (!InputAllowed || !TryScreenToWorld(screenPosition, out Vector3 world)) return;
+            int highestOrder = int.MinValue;
+            for (int i = 0; i < pieces.Count; i++)
+            {
+                Phase3TangramPiece piece = pieces[i];
+                if (piece.State == TangramPieceState.Placed || !piece.PolygonCollider.enabled || !PointInPolygon(WorldToPlane(world), PiecePlaneShape(piece))) continue;
+                if (piece.SortingOrder < highestOrder) continue;
+                highestOrder = piece.SortingOrder;
+                selectedPiece = piece;
+            }
+            if (selectedPiece != null && selectedPiece.State == TangramPieceState.Loose) selectedPiece.SetSortingOrder(6000 + ++looseSortingSequence);
+        }
+
+        public void BeginSelectedDrag(Vector2 screenPosition)
+        {
+            if (!InputAllowed || !selectedPiece || draggingPiece || !TryScreenToWorld(screenPosition, out Vector3 pointer)) return;
+            draggingPiece = selectedPiece;
+            dragOriginState = draggingPiece.State;
+            Vector3 localGrabPoint = draggingPiece.transform.InverseTransformPoint(pointer);
+            draggingPiece.transform.localScale = Vector3.one * FieldWorldScale;
+            draggingPiece.transform.position += pointer - draggingPiece.transform.TransformPoint(localGrabPoint);
+            draggingPiece.DragOffset = draggingPiece.transform.position - pointer;
+            draggingPiece.SetState(TangramPieceState.Dragging);
+            DragSelected(screenPosition);
+        }
+
+        public void DragSelected(Vector2 screenPosition)
+        {
+            if (!InputAllowed || !draggingPiece || !TryScreenToWorld(screenPosition, out Vector3 pointer)) return;
+            draggingPiece.transform.position = pointer + draggingPiece.DragOffset;
+        }
+
+        public void RotateActive(int direction)
+        {
+            if (!InputAllowed || !draggingPiece) return;
+            draggingPiece.Rotate45(direction);
+        }
+
+        public void EndSelectedDrag(Vector2 screenPosition)
+        {
+            if (!draggingPiece) { selectedPiece = null; return; }
+            Phase3TangramPiece piece = draggingPiece;
+            draggingPiece = null;
+            selectedPiece = null;
+            if (RectTransformUtility.RectangleContainsScreenPoint(deck, screenPosition, EventCamera)) { ReturnToDeck(piece); return; }
+            if (!RectTransformUtility.RectangleContainsScreenPoint(field, screenPosition, EventCamera)) { CancelDrop(piece); return; }
+            if (TryInterchangeableSnap(piece)) { RefreshVisibility(); return; }
+            Vector3 corrected = ClampInsideField(piece);
+            piece.transform.position = corrected;
+            if (OverlapsPlaced(piece)) { CancelDrop(piece); return; }
+            piece.SetState(TangramPieceState.Loose);
+            piece.LastStableLoosePosition = corrected;
+            piece.HasStableLoosePosition = true;
+            piece.SetSortingOrder(6000 + ++looseSortingSequence);
+            RefreshVisibility();
+        }
+
+        private bool InputAllowed => inputRequested && !focusSuspended && !pauseSuspended && IsPrepared && IsRunning && !IsCleared && !IsExitReady;
+        private Camera EventCamera => canvas && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
+        private float FieldWorldScale => (boardUnitXWorld.magnitude + boardUnitYWorld.magnitude) * 0.5f;
+        private float BoardWorldSide => FieldWorldScale * Phase3TangramGenerator.BoardSize;
+        private Vector3 BoardPlanePoint => worldCamera.transform.position + worldCamera.transform.forward * 10f;
+
+        private void EnsureBuilt()
+        {
+            if (built) return;
+            if (transform.childCount != 0) throw new InvalidOperationException("Phase3Root must be empty before Tangram runtime construction.");
+            deckPanel.sprite = deckSprite;
+            deckPanel.preserveAspect = true;
+            field = CreateRect("Phase3 Tangram Field", transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1250f, 1250f));
+            AddInputSurface(CreateStretch("Tangram Field Input", field));
+            RectTransform completion = CreateStretch("Tangram Completion Image", field);
+            completionImage = completion.gameObject.AddComponent<RawImage>();
+            completionImage.texture = Resources.Load<Texture2D>("Phase3/testbase");
+            completionImage.color = Color.white;
+            completionImage.raycastTarget = false;
+            completionImage.gameObject.SetActive(false);
+            deck = CreateStretch("Phase3 Tangram Deck", deckHost);
+            Image deckBackground = deck.gameObject.AddComponent<Image>();
+            deckBackground.color = Color.clear;
+            deckBackground.raycastTarget = false;
+            deckSlots = new RectTransform[4];
+            float[] x = { -480f, -160f, 160f, 480f };
+            for (int i = 0; i < deckSlots.Length; i++)
+            {
+                deckSlots[i] = CreateRect($"TangramDeckSlot{i + 1}", deck, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(x[i], -2f), new Vector2(250f, 190f));
+                AddInputSurface(deckSlots[i]);
+            }
+            previousButton = CreateButton("TangramPrevious", deck, new Vector2(0f, 0.5f), new Vector2(46f, 0f), "<");
+            nextButton = CreateButton("TangramNext", deck, new Vector2(1f, 0.5f), new Vector2(-46f, 0f), ">");
+            previousButton.onClick.AddListener(() => SetPage(page - 1));
+            nextButton.onClick.AddListener(() => SetPage(page + 1));
+            RectTransform pageLabelRect = CreateRect("TangramPageCount", deck, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -17f), new Vector2(260f, 30f));
+            pageLabel = pageLabelRect.gameObject.AddComponent<Text>();
+            pageLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            pageLabel.fontSize = 24;
+            pageLabel.alignment = TextAnchor.MiddleCenter;
+            pageLabel.color = new Color(0.12f, 0.18f, 0.28f, 0.95f);
+            pageLabel.raycastTarget = false;
+            var worldObject = new GameObject("Phase3 Tangram World Runtime");
+            worldRoot = worldObject.transform;
+            worldRoot.rotation = worldCamera.transform.rotation;
+            guide = new Phase3TangramGuide(worldRoot);
+            built = true;
+        }
+
+        private void BuildPuzzle(TangramGenerationResult generated)
+        {
+            ClearPieces();
+            targets.Clear();
+            for (int i = 0; i < generated.Pieces.Count; i++) targets.Add(new TangramTargetAssignment(generated.Pieces[i].Id, generated.Pieces[i].AbsolutePolygon));
+            for (int i = 0; i < generated.Pieces.Count; i++)
+            {
+                TangramGeneratedPiece generatedPiece = generated.Pieces[i];
+                TangramTargetAssignment assignment = targets[i];
+                Vector2 center = assignment.TargetPosition;
+                var originalShape = new List<Vector2>(generatedPiece.AbsolutePolygon.Count);
+                for (int vertex = 0; vertex < generatedPiece.AbsolutePolygon.Count; vertex++) originalShape.Add(generatedPiece.AbsolutePolygon[vertex] - center);
+                var go = new GameObject($"TangramPiece_{generatedPiece.Id}", typeof(MeshFilter), typeof(MeshRenderer), typeof(PolygonCollider2D), typeof(Phase3TangramPiece));
+                go.transform.SetParent(worldRoot, false);
+                Phase3TangramPiece piece = go.GetComponent<Phase3TangramPiece>();
+                piece.Initialize(generatedPiece.Id, originalShape, assignment, PieceColors[i % PieceColors.Length], i / 4, i % 4, generatedPiece.InitialRotationStep);
+                pieces.Add(piece);
+            }
+            page = 0;
+            completionImage.gameObject.SetActive(false);
+            RefreshLayout();
+        }
+
+        private void RefreshLayout()
+        {
+            if (!built || pieces.Count == 0) return;
+            Canvas.ForceUpdateCanvases();
+            RefreshBoardFrame();
+            guide.Build(targets, this);
+            guide.SetVisible(!IsCleared);
+            for (int i = 0; i < pieces.Count; i++) if (pieces[i].State == TangramPieceState.InDeck) PlaceAtOriginalDeckSlot(pieces[i]);
+            RefreshVisibility();
+        }
+
+        private void RefreshVisibility()
+        {
+            if (!built || previousButton == null || nextButton == null) return;
+            int pageCount = (pieces.Count + 3) / 4;
+            for (int i = 0; i < pieces.Count; i++)
+            {
+                Phase3TangramPiece piece = pieces[i];
+                if (!piece) continue;
+                bool visible = piece.State != TangramPieceState.InDeck || piece.OriginalDeckPage == page;
+                piece.SetVisible(visible && !IsCleared);
+            }
+            previousButton.interactable = InputAllowed && page > 0;
+            nextButton.interactable = InputAllowed && page + 1 < pageCount;
+            if (pageLabel) pageLabel.text = pageCount > 0 ? $"{page + 1} / {pageCount}  ·  {pieces.Count}" : "0 / 0";
+        }
+
+        private void PlaceAtOriginalDeckSlot(Phase3TangramPiece piece)
+        {
+            RectTransform slot = deckSlots[piece.OriginalDeckSlotId];
+            piece.transform.position = RectLocalToWorld(slot, slot.rect.center);
+            piece.transform.localScale = Vector3.one * PreviewWorldScale(piece, slot);
+        }
+
+        private float PreviewWorldScale(Phase3TangramPiece piece, RectTransform slot)
+        {
+            RotatedBounds(piece.OriginalShape, piece.CurrentRotationStep, out Vector2 min, out Vector2 max);
+            Vector3 left = RectLocalToWorld(slot, new Vector2(slot.rect.xMin + 14f, slot.rect.center.y));
+            Vector3 right = RectLocalToWorld(slot, new Vector2(slot.rect.xMax - 14f, slot.rect.center.y));
+            Vector3 bottom = RectLocalToWorld(slot, new Vector2(slot.rect.center.x, slot.rect.yMin + 14f));
+            Vector3 top = RectLocalToWorld(slot, new Vector2(slot.rect.center.x, slot.rect.yMax - 14f));
+            float width = Mathf.Max(0.001f, max.x - min.x), height = Mathf.Max(0.001f, max.y - min.y);
+            return Mathf.Min(Vector3.Distance(left, right) / width, Vector3.Distance(bottom, top) / height);
+        }
+
+        private bool TryInterchangeableSnap(Phase3TangramPiece dragged)
+        {
+            List<Vector2> current = PiecePlaneShape(dragged);
+            Vector3 originalPosition = dragged.transform.position;
+            Quaternion originalRotation = dragged.transform.rotation;
+            Vector3 originalScale = dragged.transform.localScale;
+            float radius = BoardWorldSide * 0.20f;
+            float tolerance = BoardWorldSide * 0.008f;
+
+            for (int i = 0; i < pieces.Count; i++)
+            {
+                Phase3TangramPiece owner = pieces[i];
+                if (owner.State == TangramPieceState.Placed) continue;
+                TangramTargetAssignment candidate = owner.Assignment;
+                Vector3 targetCenter = LogicalToWorld(candidate.TargetPosition);
+                Vector2 translation = WorldToPlane(targetCenter) - WorldToPlane(dragged.transform.position);
+                if (translation.sqrMagnitude > radius * radius) continue;
+                List<Vector2> targetWorld = TargetWorldPolygon(candidate);
+                if (!MatchPolygonsTranslated(current, translation, targetWorld, tolerance)) continue;
+
+                dragged.transform.position = targetCenter;
+                List<Vector2> finalShape = PiecePlaneShape(dragged);
+                if (!MatchPolygons(finalShape, targetWorld, tolerance) || !InsideField(finalShape) || dragged.transform.rotation != originalRotation || dragged.transform.localScale != originalScale)
+                {
+                    dragged.transform.position = originalPosition;
+                    return false;
+                }
+
+                if (owner != dragged)
+                {
+                    SwapAssignments(dragged, owner);
+                }
+
+                if (!MatchPolygons(PiecePlaneShape(dragged), TargetWorldPolygon(dragged.Assignment), tolerance))
+                {
+                    if (owner != dragged) SwapAssignments(dragged, owner);
+                    dragged.transform.position = originalPosition;
+                    return false;
+                }
+
+                dragged.SetState(TangramPieceState.Placed);
+                dragged.SetSortingOrder(4000 + dragged.Id);
+                scoreController.AddScore(200, GamePhaseId.Phase3, ScoreReason.Other);
+                CheckCompletion();
+                return true;
+            }
+            return false;
+        }
+
+        private void CheckCompletion()
+        {
+            for (int i = 0; i < pieces.Count; i++) if (!pieces[i].IsPlaced) return;
+            IsCleared = true;
+            IsRunning = false;
+            ApplyInputGate();
+            guide.SetVisible(false);
+            for (int i = 0; i < pieces.Count; i++) pieces[i].SetVisible(false);
+            completionImage.gameObject.SetActive(true);
+            scoreController.AddScore(1000, GamePhaseId.Phase3, ScoreReason.Other);
+            PhaseCleared?.Invoke();
+            IsExitReady = true;
+            PhaseExitReady?.Invoke();
+        }
+
+        private Vector3 ClampInsideField(Phase3TangramPiece piece)
+        {
+            List<Vector2> polygon = PiecePlaneShape(piece);
+            Bounds(polygon, out Vector2 min, out Vector2 max);
+            Vector3 boardMin3 = LogicalToWorld(Vector2.zero), boardMax3 = LogicalToWorld(Vector2.one * Phase3TangramGenerator.BoardSize);
+            Vector2 first = WorldToPlane(boardMin3), second = WorldToPlane(boardMax3);
+            Vector2 boardMin = Vector2.Min(first, second), boardMax = Vector2.Max(first, second);
+            float x = min.x < boardMin.x ? boardMin.x - min.x : max.x > boardMax.x ? boardMax.x - max.x : 0f;
+            float y = min.y < boardMin.y ? boardMin.y - min.y : max.y > boardMax.y ? boardMax.y - max.y : 0f;
+            return piece.transform.position + PlaneVectorToWorld(new Vector2(x, y));
+        }
+
+        private bool OverlapsPlaced(Phase3TangramPiece piece)
+        {
+            List<Vector2> polygon = PiecePlaneShape(piece);
+            for (int i = 0; i < pieces.Count; i++) if (pieces[i] != piece && pieces[i].State == TangramPieceState.Placed && ConvexInteriorsOverlap(polygon, PiecePlaneShape(pieces[i]))) return true;
+            return false;
+        }
+
+        private void CancelDrop(Phase3TangramPiece piece)
+        {
+            if (dragOriginState == TangramPieceState.Loose && piece.HasStableLoosePosition)
+            {
+                piece.transform.position = piece.LastStableLoosePosition;
+                piece.transform.localScale = Vector3.one * FieldWorldScale;
+                piece.SetState(TangramPieceState.Loose);
+                piece.SetSortingOrder(6000 + ++looseSortingSequence);
+            }
+            else ReturnToDeck(piece);
+            RefreshVisibility();
+        }
+
+        private void ReturnToDeck(Phase3TangramPiece piece)
+        {
+            piece.SetState(TangramPieceState.InDeck);
+            piece.HasStableLoosePosition = false;
+            PlaceAtOriginalDeckSlot(piece);
+            RefreshVisibility();
+        }
+
+        private void SetPage(int value)
+        {
+            int pageCount = (pieces.Count + 3) / 4;
+            if (value < 0 || value >= pageCount) return;
+            page = value;
+            for (int i = 0; i < pieces.Count; i++) if (pieces[i].State == TangramPieceState.InDeck) PlaceAtOriginalDeckSlot(pieces[i]);
+            RefreshVisibility();
+            Debug.Log($"[Phase3Tangram][Deck] page={page + 1}/{pageCount},totalPieces={pieces.Count}", this);
+        }
+
+        private void RefreshBoardFrame()
+        {
+            boardFrameReady = false;
+            if (!field || !worldCamera) throw new InvalidOperationException("Tangram board frame references are missing.");
+            float side = Mathf.Min(field.rect.width, field.rect.height);
+            Vector2 originLocal = field.rect.center - Vector2.one * side * 0.5f;
+            Vector3 origin = RectLocalToWorld(field, originLocal);
+            Vector3 right = RectLocalToWorld(field, originLocal + Vector2.right * side);
+            Vector3 top = RectLocalToWorld(field, originLocal + Vector2.up * side);
+            boardOriginWorld = origin;
+            boardUnitXWorld = (right - origin) / Phase3TangramGenerator.BoardSize;
+            boardUnitYWorld = (top - origin) / Phase3TangramGenerator.BoardSize;
+            if (boardUnitXWorld.sqrMagnitude < 0.000001f || boardUnitYWorld.sqrMagnitude < 0.000001f)
+                throw new InvalidOperationException("Tangram board frame has zero size.");
+            float scaleMismatch = Mathf.Abs(boardUnitXWorld.magnitude - boardUnitYWorld.magnitude) / Mathf.Max(boardUnitXWorld.magnitude, boardUnitYWorld.magnitude);
+            float orthogonality = Mathf.Abs(Vector3.Dot(boardUnitXWorld.normalized, boardUnitYWorld.normalized));
+            if (scaleMismatch > 0.001f || orthogonality > 0.001f)
+                throw new InvalidOperationException($"Tangram board is not square: scaleMismatch={scaleMismatch:F6}, orthogonality={orthogonality:F6}.");
+            if (worldRoot)
+            {
+                Vector3 forward = Vector3.Cross(boardUnitXWorld, boardUnitYWorld).normalized;
+                worldRoot.rotation = Quaternion.LookRotation(forward, boardUnitYWorld.normalized);
+            }
+            boardFrameReady = true;
+        }
+
+        private void AddInputSurface(RectTransform rect)
+        {
+            Image image = rect.GetComponent<Image>() ?? rect.gameObject.AddComponent<Image>();
+            image.color = Color.clear;
+            image.raycastTarget = true;
+            rect.gameObject.AddComponent<Phase3TangramInputAdapter>().Configure(this);
+        }
+
+        private void SetRuntimeVisible(bool value)
+        {
+            if (field) field.gameObject.SetActive(value);
+            if (deck) deck.gameObject.SetActive(value);
+            if (worldRoot) worldRoot.gameObject.SetActive(value);
+        }
+
+        private void ClearPieces()
+        {
+            for (int i = 0; i < pieces.Count; i++) if (pieces[i]) Destroy(pieces[i].gameObject);
+            pieces.Clear();
+            selectedPiece = draggingPiece = null;
+        }
+
+        private void AdjustCanvasForWorldPieces()
+        {
+            if (canvasAdjusted) return;
+            originalRenderMode = canvas.renderMode;
+            originalCanvasCamera = canvas.worldCamera;
+            originalPlaneDistance = canvas.planeDistance;
+            canvas.renderMode = RenderMode.ScreenSpaceCamera;
+            canvas.worldCamera = worldCamera;
+            canvas.planeDistance = 100f;
+            canvasAdjusted = true;
+        }
+
+        private void RestoreCanvas()
+        {
+            if (!canvasAdjusted) return;
+            if (canvas)
+            {
+                canvas.renderMode = originalRenderMode;
+                canvas.worldCamera = originalCanvasCamera;
+                canvas.planeDistance = originalPlaneDistance;
+            }
+            canvasAdjusted = false;
+        }
+
+        private void ApplyInputGate() { if (built) RefreshVisibility(); }
+        private void Update() { if (InputAllowed && draggingPiece && Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame) RotateActive(1); }
+        private void OnApplicationFocus(bool focused) { focusSuspended = !focused; ApplyInputGate(); }
+        private void OnApplicationPause(bool paused) { pauseSuspended = paused; ApplyInputGate(); }
+
+        private void OnDestroy()
+        {
+            RestoreCanvas();
+            ClearPieces();
+            guide?.Dispose();
+            if (worldRoot) Destroy(worldRoot.gameObject);
+        }
+
+        private Vector3 RectLocalToWorld(RectTransform rect, Vector2 local)
+        {
+            Vector3 world = rect.TransformPoint(local);
+            Vector2 screen = RectTransformUtility.WorldToScreenPoint(EventCamera, world);
+            return TryScreenToWorld(screen, out Vector3 result) ? result : Vector3.zero;
+        }
+
+        private bool TryScreenToWorld(Vector2 screen, out Vector3 world)
+        {
+            if (!worldCamera) { world = default; return false; }
+            Ray ray = worldCamera.ScreenPointToRay(screen);
+            var plane = new Plane(worldCamera.transform.forward, BoardPlanePoint);
+            if (!plane.Raycast(ray, out float distance)) { world = default; return false; }
+            world = ray.GetPoint(distance);
+            return true;
+        }
+
+        private List<Vector2> TargetWorldPolygon(TangramTargetAssignment assignment)
+        {
+            var result = new List<Vector2>(assignment.AbsolutePolygon.Count);
+            for (int i = 0; i < assignment.AbsolutePolygon.Count; i++) result.Add(WorldToPlane(LogicalToWorld(assignment.AbsolutePolygon[i])));
+            return result;
+        }
+
+        private List<Vector2> PiecePlaneShape(Phase3TangramPiece piece)
+        {
+            List<Vector3> worldShape = piece.GetCurrentWorldShape();
+            var result = new List<Vector2>(worldShape.Count);
+            for (int i = 0; i < worldShape.Count; i++) result.Add(WorldToPlane(worldShape[i]));
+            return result;
+        }
+
+        private Vector2 WorldToPlane(Vector3 world)
+        {
+            Vector3 offset = world - BoardPlanePoint;
+            return new Vector2(Vector3.Dot(offset, worldCamera.transform.right), Vector3.Dot(offset, worldCamera.transform.up));
+        }
+
+        private Vector3 PlaneVectorToWorld(Vector2 vector)
+        {
+            return worldCamera.transform.right * vector.x + worldCamera.transform.up * vector.y;
+        }
+
+        private static bool PointInPolygon(Vector2 point, IReadOnlyList<Vector2> polygon)
+        {
+            bool inside = false;
+            for (int i = 0, previous = polygon.Count - 1; i < polygon.Count; previous = i++)
+            {
+                Vector2 a = polygon[i], b = polygon[previous];
+                bool crosses = (a.y > point.y) != (b.y > point.y)
+                    && point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x;
+                if (crosses) inside = !inside;
+            }
+            return inside;
+        }
+
+        private bool InsideField(IReadOnlyList<Vector2> polygon)
+        {
+            Vector3 first = LogicalToWorld(Vector2.zero), second = LogicalToWorld(Vector2.one * Phase3TangramGenerator.BoardSize);
+            Vector2 firstPoint = WorldToPlane(first), secondPoint = WorldToPlane(second);
+            Vector2 min = Vector2.Min(firstPoint, secondPoint), max = Vector2.Max(firstPoint, secondPoint);
+            for (int i = 0; i < polygon.Count; i++) if (polygon[i].x < min.x - 0.0001f || polygon[i].y < min.y - 0.0001f || polygon[i].x > max.x + 0.0001f || polygon[i].y > max.y + 0.0001f) return false;
+            return true;
+        }
+
+        private static bool MatchPolygonsTranslated(IReadOnlyList<Vector2> actual, Vector2 translation, IReadOnlyList<Vector2> target, float tolerance)
+        {
+            var translated = new List<Vector2>(actual.Count);
+            for (int i = 0; i < actual.Count; i++) translated.Add(actual[i] + translation);
+            return MatchPolygons(translated, target, tolerance);
+        }
+
+        public static bool MatchPolygons(IReadOnlyList<Vector2> first, IReadOnlyList<Vector2> second, float tolerance)
+        {
+            if (first.Count != second.Count) return false;
+            var matched = new bool[second.Count];
+            float squared = tolerance * tolerance;
+            for (int i = 0; i < first.Count; i++)
+            {
+                bool found = false;
+                for (int j = 0; j < second.Count; j++) if (!matched[j] && (first[i] - second[j]).sqrMagnitude <= squared) { matched[j] = true; found = true; break; }
+                if (!found) return false;
+            }
+            return true;
+        }
+
+        private static void SwapAssignments(Phase3TangramPiece first, Phase3TangramPiece second)
+        {
+            TangramTargetAssignment assignment = first.Assignment;
+            first.SetAssignment(second.Assignment);
+            second.SetAssignment(assignment);
+        }
+
+        private static bool ConvexInteriorsOverlap(IReadOnlyList<Vector2> first, IReadOnlyList<Vector2> second) => !Separated(first, second) && !Separated(second, first);
+        private static bool Separated(IReadOnlyList<Vector2> axes, IReadOnlyList<Vector2> other)
+        {
+            for (int edge = 0; edge < axes.Count; edge++)
+            {
+                Vector2 a = axes[edge], b = axes[(edge + 1) % axes.Count];
+                Vector2 axis = new Vector2(-(b.y - a.y), b.x - a.x);
+                Project(axes, axis, out float firstMin, out float firstMax); Project(other, axis, out float secondMin, out float secondMax);
+                if (firstMax <= secondMin + 0.00001f || secondMax <= firstMin + 0.00001f) return true;
+            }
+            return false;
+        }
+
+        private static void Project(IReadOnlyList<Vector2> polygon, Vector2 axis, out float min, out float max)
+        {
+            min = max = Vector2.Dot(polygon[0], axis);
+            for (int i = 1; i < polygon.Count; i++) { float value = Vector2.Dot(polygon[i], axis); min = Mathf.Min(min, value); max = Mathf.Max(max, value); }
+        }
+
+        private static void Bounds(IReadOnlyList<Vector2> polygon, out Vector2 min, out Vector2 max)
+        {
+            min = new Vector2(float.MaxValue, float.MaxValue); max = new Vector2(float.MinValue, float.MinValue);
+            for (int i = 0; i < polygon.Count; i++) { min = Vector2.Min(min, polygon[i]); max = Vector2.Max(max, polygon[i]); }
+        }
+
+        private static void RotatedBounds(IReadOnlyList<Vector2> polygon, int rotationStep, out Vector2 min, out Vector2 max)
+        {
+            float radians = rotationStep * 45f * Mathf.Deg2Rad;
+            float cosine = Mathf.Cos(radians), sine = Mathf.Sin(radians);
+            min = new Vector2(float.MaxValue, float.MaxValue);
+            max = new Vector2(float.MinValue, float.MinValue);
+            for (int i = 0; i < polygon.Count; i++)
+            {
+                Vector2 point = polygon[i];
+                Vector2 rotated = new Vector2(point.x * cosine - point.y * sine, point.x * sine + point.y * cosine);
+                min = Vector2.Min(min, rotated);
+                max = Vector2.Max(max, rotated);
+            }
+        }
+
+        private static RectTransform CreateStretch(string name, Transform parent)
+        {
+            RectTransform rect = CreateRect(name, parent, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+            rect.offsetMin = rect.offsetMax = Vector2.zero;
+            return rect;
+        }
+
+        private static RectTransform CreateRect(string name, Transform parent, Vector2 anchorMin, Vector2 anchorMax, Vector2 position, Vector2 size)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.layer = parent.gameObject.layer;
+            RectTransform rect = go.transform as RectTransform;
+            rect.SetParent(parent, false);
+            rect.anchorMin = anchorMin; rect.anchorMax = anchorMax; rect.anchoredPosition = position; rect.sizeDelta = size; rect.localScale = Vector3.one; rect.localRotation = Quaternion.identity;
+            return rect;
+        }
+
+        private static Button CreateButton(string name, Transform parent, Vector2 anchor, Vector2 position, string label)
+        {
+            RectTransform rect = CreateRect(name, parent, anchor, anchor, position, new Vector2(72f, 170f));
+            Image image = rect.gameObject.AddComponent<Image>();
+            image.color = new Color(0.18f, 0.42f, 0.78f, 0.9f);
+            Button button = rect.gameObject.AddComponent<Button>();
+            button.targetGraphic = image;
+            RectTransform labelRect = CreateStretch("Label", rect);
+            Text text = labelRect.gameObject.AddComponent<Text>();
+            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.fontSize = 38;
+            text.fontStyle = FontStyle.Bold;
+            text.alignment = TextAnchor.MiddleCenter;
+            text.color = Color.white;
+            text.raycastTarget = false;
+            text.text = label;
+            return button;
+        }
+
+        private static long CreateRandomSeed()
+        {
+            byte[] bytes = Guid.NewGuid().ToByteArray();
+            long seed = BitConverter.ToInt64(bytes, 0);
+            return seed != 0L ? seed : DateTime.UtcNow.Ticks;
+        }
+    }
+}
