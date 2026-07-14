@@ -111,6 +111,41 @@ namespace HATAGONG.Phase3
                 return CreateSingleFailure(Phase3PartitionFailure.InvalidDifficulty, difficulty.ToString(), "Difficulty must be Easy, Normal, or Hard.");
             }
 
+            return ValidateWithRules(puzzle, rules);
+        }
+
+        public static Phase3PartitionValidationResult Validate(
+            Phase3PuzzleDefinition puzzle,
+            GameDifficulty difficulty,
+            Phase3DifficultyRuleSet explicitRules)
+        {
+            if (puzzle == null) throw new ArgumentNullException(nameof(puzzle));
+            try
+            {
+                Phase3DifficultyRules.For(difficulty);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return CreateSingleFailure(Phase3PartitionFailure.InvalidDifficulty, difficulty.ToString(), "Difficulty must be Easy, Normal, or Hard.");
+            }
+
+            if (explicitRules.TargetPieceCount <= 0 || explicitRules.SnapDistance <= 0d ||
+                explicitRules.MinimumPieceAreaRatio <= 0d || explicitRules.MaximumPieceAreaRatio <= 0d ||
+                explicitRules.MinimumPieceAreaRatio > explicitRules.MaximumPieceAreaRatio ||
+                explicitRules.MaximumAspectRatio <= 0d || explicitRules.MaximumVertexCount < Phase3Geometry.MinimumVertexCount ||
+                explicitRules.MaximumVertexCount > Phase3Geometry.MaximumVertexCount)
+            {
+                throw new ArgumentOutOfRangeException(nameof(explicitRules), "Explicit partition rules are invalid.");
+            }
+
+            return ValidateWithRules(puzzle, explicitRules);
+        }
+
+        private static Phase3PartitionValidationResult ValidateWithRules(
+            Phase3PuzzleDefinition puzzle,
+            Phase3DifficultyRuleSet rules)
+        {
+
             var issues = new List<Phase3PartitionIssue>();
             if (puzzle.Pieces.Count != rules.TargetPieceCount)
             {
