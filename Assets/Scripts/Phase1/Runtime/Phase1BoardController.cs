@@ -19,6 +19,7 @@ namespace HATAGONG.Phase1
         [SerializeField] private int currentSeed; [SerializeField] private string currentBagId,currentLayoutHash,currentVariantHash;
         private readonly Phase1ShuffleBag shuffle=new();private readonly Dictionary<Phase1Difficulty,Queue<string>> hashes=new();private readonly List<Phase1TileView> views=new();private Phase1BoardState state;private int remaining,totalHits;private float started;private bool cleared,smokeStarted,prepared;
         public event Action Phase1ClearConditionReached;public event Action<Phase1BoardState> Phase1Cleared;public Phase1HitResult LastHitResult{get;private set;}public bool IsPrepared=>prepared&&state!=null;
+        public bool CanPlayTouchEffect=>IsPrepared&&!cleared&&sessionController&&sessionController.CanAcceptGameplayInput&&inputController&&inputController.InputEnabled;
         private void Start(){if(config){config.EnsureDefaults();generateOnStart=config.GenerateOnStart&&generateOnStart;}if(generateOnStart&&!IsPrepared)Prepare(difficulty);if(runSmokeTestOnStart&&state!=null)RunSmokeTestImmediate();}
         private void Update(){if(runSmokeTestOnStart&&state!=null&&!smokeStarted){smokeStarted=true;StartCoroutine(RunSmokeTest());}}
         [ContextMenu("Generate Board")] public void GenerateBoard(){if(!IsPrepared)Prepare(difficulty);}

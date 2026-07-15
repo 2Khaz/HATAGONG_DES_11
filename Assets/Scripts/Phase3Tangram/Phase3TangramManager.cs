@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using HATAGONG.GameFlow;
 using UnityEngine;
@@ -59,6 +60,10 @@ namespace HATAGONG.Phase3Tangram
         private Vector3 boardUnitXWorld;
         private Vector3 boardUnitYWorld;
         private bool boardFrameReady;
+        private Sprite deckFrame1;
+        private Sprite deckFrame2;
+        private Sprite deckFrame3;
+        private Coroutine deckAnimation;
 
         public GamePhaseId PhaseId => GamePhaseId.Phase3;
         public bool IsPrepared { get; private set; }
@@ -76,7 +81,7 @@ namespace HATAGONG.Phase3Tangram
         {
             SetInputEnabled(false);
             IsPrepared = IsRunning = IsCleared = IsExitReady = false;
-            if (!context.IsValid || !canvas || !graphicRaycaster || !eventSystem || !worldCamera || !scoreController || !deckHost || !deckPanel || !deckSprite) return false;
+            if (!context.IsValid || !canvas || !graphicRaycaster || !eventSystem || !worldCamera || !scoreController || !deckHost || !deckPanel || !deckSprite || !EnsureDeckFrames()) return false;
             try
             {
                 EnsureBuilt();
@@ -108,6 +113,7 @@ namespace HATAGONG.Phase3Tangram
             IsRunning = true;
             Canvas.ForceUpdateCanvases();
             RefreshLayout();
+            PlayDeckOpeningAnimation();
             ApplyInputGate();
             Debug.Log($"[Phase3Tangram][Bind] difficulty={difficulty},seed={activeSeed},fixedSeed={useFixedSeedForDebug},pieces={pieces.Count},expected={Phase3TangramGenerator.PieceCount(difficulty)},visuals={pieces.Count},guides={GuideCount},deckPages={(pieces.Count + 3) / 4},boardWidth={boardUnitXWorld.magnitude * Phase3TangramGenerator.BoardSize:F5},boardHeight={boardUnitYWorld.magnitude * Phase3TangramGenerator.BoardSize:F5},meshColliderSharedShape=true,uvPieces=0,legacyRuntime=0", this);
             return true;
@@ -118,6 +124,7 @@ namespace HATAGONG.Phase3Tangram
             SetInputEnabled(false);
             IsRunning = false;
             selectedPiece = draggingPiece = null;
+            StopDeckOpeningAnimation();
             SetRuntimeVisible(false);
             RestoreCanvas();
             gameObject.SetActive(false);
@@ -157,9 +164,17 @@ namespace HATAGONG.Phase3Tangram
             if (!InputAllowed || !selectedPiece || draggingPiece || !TryScreenToWorld(screenPosition, out Vector3 pointer)) return;
             draggingPiece = selectedPiece;
             dragOriginState = draggingPiece.State;
-            Vector3 localGrabPoint = draggingPiece.transform.InverseTransformPoint(pointer);
             draggingPiece.transform.localScale = Vector3.one * FieldWorldScale;
-            draggingPiece.transform.position += pointer - draggingPiece.transform.TransformPoint(localGrabPoint);
+            if (dragOriginState == TangramPieceState.InDeck)
+            {
+                draggingPiece.transform.position = pointer;
+            }
+            else
+            {
+                Vector3 localGrabPoint = draggingPiece.transform.InverseTransformPoint(pointer);
+                draggingPiece.transform.position += pointer - draggingPiece.transform.TransformPoint(localGrabPoint);
+            }
+            draggingPiece.transform.position -= worldCamera.transform.forward * DragDisplayOffset;
             draggingPiece.DragOffset = draggingPiece.transform.position - pointer;
             draggingPiece.SetState(TangramPieceState.Dragging);
             DragSelected(screenPosition);
@@ -183,17 +198,16 @@ namespace HATAGONG.Phase3Tangram
             Phase3TangramPiece piece = draggingPiece;
             draggingPiece = null;
             selectedPiece = null;
+            piece.transform.position = ProjectOntoBoardPlane(piece.transform.position);
             if (RectTransformUtility.RectangleContainsScreenPoint(deck, screenPosition, EventCamera)) { ReturnToDeck(piece); return; }
-            if (!RectTransformUtility.RectangleContainsScreenPoint(field, screenPosition, EventCamera)) { CancelDrop(piece); return; }
+            if (!RectTransformUtility.RectangleContainsScreenPoint(field, screenPosition, EventCamera))
+            {
+                if (dragOriginState == TangramPieceState.Loose) PlaceLooseInsideField(piece);
+                else CancelDrop(piece);
+                return;
+            }
             if (TryInterchangeableSnap(piece)) { RefreshVisibility(); return; }
-            Vector3 corrected = ClampInsideField(piece);
-            piece.transform.position = corrected;
-            if (OverlapsPlaced(piece)) { CancelDrop(piece); return; }
-            piece.SetState(TangramPieceState.Loose);
-            piece.LastStableLoosePosition = corrected;
-            piece.HasStableLoosePosition = true;
-            piece.SetSortingOrder(6000 + ++looseSortingSequence);
-            RefreshVisibility();
+            PlaceLooseInsideField(piece);
         }
 
         private bool InputAllowed => inputRequested && !focusSuspended && !pauseSuspended && IsPrepared && IsRunning && !IsCleared && !IsExitReady;
@@ -201,13 +215,12 @@ namespace HATAGONG.Phase3Tangram
         private float FieldWorldScale => (boardUnitXWorld.magnitude + boardUnitYWorld.magnitude) * 0.5f;
         private float BoardWorldSide => FieldWorldScale * Phase3TangramGenerator.BoardSize;
         private Vector3 BoardPlanePoint => worldCamera.transform.position + worldCamera.transform.forward * 10f;
+        private float DragDisplayOffset => Mathf.Max(0.01f, BoardWorldSide * 0.01f);
 
         private void EnsureBuilt()
         {
             if (built) return;
             if (transform.childCount != 0) throw new InvalidOperationException("Phase3Root must be empty before Tangram runtime construction.");
-            deckPanel.sprite = deckSprite;
-            deckPanel.preserveAspect = true;
             field = CreateRect("Phase3 Tangram Field", transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1250f, 1250f));
             AddInputSurface(CreateStretch("Tangram Field Input", field));
             RectTransform completion = CreateStretch("Tangram Completion Image", field);
@@ -389,11 +402,15 @@ namespace HATAGONG.Phase3Tangram
             return piece.transform.position + PlaneVectorToWorld(new Vector2(x, y));
         }
 
-        private bool OverlapsPlaced(Phase3TangramPiece piece)
+        private void PlaceLooseInsideField(Phase3TangramPiece piece)
         {
-            List<Vector2> polygon = PiecePlaneShape(piece);
-            for (int i = 0; i < pieces.Count; i++) if (pieces[i] != piece && pieces[i].State == TangramPieceState.Placed && ConvexInteriorsOverlap(polygon, PiecePlaneShape(pieces[i]))) return true;
-            return false;
+            Vector3 corrected = ClampInsideField(piece);
+            piece.transform.position = corrected;
+            piece.SetState(TangramPieceState.Loose);
+            piece.LastStableLoosePosition = corrected;
+            piece.HasStableLoosePosition = true;
+            piece.SetSortingOrder(6000 + ++looseSortingSequence);
+            RefreshVisibility();
         }
 
         private void CancelDrop(Phase3TangramPiece piece)
@@ -506,10 +523,50 @@ namespace HATAGONG.Phase3Tangram
 
         private void OnDestroy()
         {
+            StopDeckOpeningAnimation();
             RestoreCanvas();
             ClearPieces();
             guide?.Dispose();
             if (worldRoot) Destroy(worldRoot.gameObject);
+        }
+
+        private bool EnsureDeckFrames()
+        {
+            if (!deckFrame1) deckFrame1 = Resources.Load<Sprite>("Ingame/UI/Deck_Panel/Img_deck1");
+            if (!deckFrame2) deckFrame2 = Resources.Load<Sprite>("Ingame/UI/Deck_Panel/Img_deck2");
+            if (!deckFrame3) deckFrame3 = deckSprite ? deckSprite : Resources.Load<Sprite>("Ingame/UI/Deck_Panel/Img_deck3");
+            return deckFrame1 && deckFrame2 && deckFrame3;
+        }
+
+        private void PlayDeckOpeningAnimation()
+        {
+            StopDeckOpeningAnimation();
+            if (!EnsureDeckFrames()) return;
+            deckAnimation = StartCoroutine(DeckOpeningRoutine());
+        }
+
+        private IEnumerator DeckOpeningRoutine()
+        {
+            deckPanel.preserveAspect = true;
+            deckPanel.sprite = deckFrame1;
+            yield return new WaitForSecondsRealtime(0.12f);
+            deckPanel.sprite = deckFrame2;
+            yield return new WaitForSecondsRealtime(0.12f);
+            deckPanel.sprite = deckFrame3;
+            deckAnimation = null;
+        }
+
+        private void StopDeckOpeningAnimation()
+        {
+            if (deckAnimation == null) return;
+            StopCoroutine(deckAnimation);
+            deckAnimation = null;
+        }
+
+        private Vector3 ProjectOntoBoardPlane(Vector3 position)
+        {
+            float offset = Vector3.Dot(position - BoardPlanePoint, worldCamera.transform.forward);
+            return position - worldCamera.transform.forward * offset;
         }
 
         private Vector3 RectLocalToWorld(RectTransform rect, Vector2 local)
@@ -603,25 +660,6 @@ namespace HATAGONG.Phase3Tangram
             TangramTargetAssignment assignment = first.Assignment;
             first.SetAssignment(second.Assignment);
             second.SetAssignment(assignment);
-        }
-
-        private static bool ConvexInteriorsOverlap(IReadOnlyList<Vector2> first, IReadOnlyList<Vector2> second) => !Separated(first, second) && !Separated(second, first);
-        private static bool Separated(IReadOnlyList<Vector2> axes, IReadOnlyList<Vector2> other)
-        {
-            for (int edge = 0; edge < axes.Count; edge++)
-            {
-                Vector2 a = axes[edge], b = axes[(edge + 1) % axes.Count];
-                Vector2 axis = new Vector2(-(b.y - a.y), b.x - a.x);
-                Project(axes, axis, out float firstMin, out float firstMax); Project(other, axis, out float secondMin, out float secondMax);
-                if (firstMax <= secondMin + 0.00001f || secondMax <= firstMin + 0.00001f) return true;
-            }
-            return false;
-        }
-
-        private static void Project(IReadOnlyList<Vector2> polygon, Vector2 axis, out float min, out float max)
-        {
-            min = max = Vector2.Dot(polygon[0], axis);
-            for (int i = 1; i < polygon.Count; i++) { float value = Vector2.Dot(polygon[i], axis); min = Mathf.Min(min, value); max = Mathf.Max(max, value); }
         }
 
         private static void Bounds(IReadOnlyList<Vector2> polygon, out Vector2 min, out Vector2 max)

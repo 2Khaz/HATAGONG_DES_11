@@ -110,7 +110,8 @@ namespace HATAGONG.Phase3Tangram
         {
             State = state;
             polygonCollider.enabled = state != TangramPieceState.Placed;
-            if (state == TangramPieceState.Dragging) meshRenderer.sortingOrder = 7000;
+            if (material) material.renderQueue = state == TangramPieceState.Dragging ? 5000 : 3000;
+            if (state == TangramPieceState.Dragging) meshRenderer.sortingOrder = 32000;
             else meshRenderer.sortingOrder = 5000 + Id;
         }
 
