@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using HATAGONG.Outgame;
 using UnityEngine;
 
 namespace HATAGONG.GameFlow
@@ -20,6 +21,7 @@ namespace HATAGONG.GameFlow
         private GamePhaseRegistry _registry;
         private GamePhaseTransaction _phaseTransaction;
         private GameRunContext _runContext;
+        private string _contextInitializationError;
         private IGamePhase _pendingNextPhase;
         private double _transitionStartedAt;
 
@@ -36,6 +38,15 @@ namespace HATAGONG.GameFlow
         public event Action<GameSessionState> SessionStateChanged { add => _model.SessionStateChanged += value; remove => _model.SessionStateChanged -= value; }
         public event Action GameExpired { add => _model.GameExpired += value; remove => _model.GameExpired -= value; }
         public event Action GameCompleted { add => _model.GameCompleted += value; remove => _model.GameCompleted -= value; }
+
+        private void Awake()
+        {
+            if (!TryCreateRunContext(out GameRunContext runContext, out _contextInitializationError)) return;
+            _runContext = runContext;
+            if (_runContext.HasSelectedRequest) OutgameRequestSelectionStore.Clear();
+            GameRequestContext requestContext = GetComponent<GameRequestContext>();
+            if (requestContext) requestContext.SetRequest(_runContext.RequestType);
+        }
 
         private void Start()
         {
@@ -57,10 +68,11 @@ namespace HATAGONG.GameFlow
             }
 
             _registry.DisableAllInput();
-            _runContext = new GameRunContext(difficulty);
             if (!_runContext.IsValid)
             {
-                FailInitialization($"Invalid game difficulty: {difficulty}.");
+                FailInitialization(string.IsNullOrEmpty(_contextInitializationError)
+                    ? "GameRunContext was not initialized."
+                    : _contextInitializationError);
                 return;
             }
 
@@ -82,6 +94,30 @@ namespace HATAGONG.GameFlow
                 Debug.LogError("[GameFlow][Session] READY overlay could not start. Session remains Ready with all input disabled.", this);
                 _phaseTransaction.SetCurrentInputEnabled(false);
             }
+        }
+
+        private bool TryCreateRunContext(out GameRunContext context, out string error)
+        {
+            if (!OutgameRequestSelectionStore.TryGetPending(out OutgameRequestRunSelection selection))
+            {
+                GameRequestContext requestContext = GetComponent<GameRequestContext>();
+                RequestType fallbackRequestType = requestContext ? requestContext.CurrentRequestType : RequestType.Normal;
+                context = new GameRunContext(difficulty, fallbackRequestType);
+                error = context.IsValid ? string.Empty : $"Invalid direct INGAME fallback context: difficulty={difficulty}, requestType={fallbackRequestType}.";
+                return context.IsValid;
+            }
+
+            context = new GameRunContext(selection.RequestId, selection.Difficulty, selection.RequestType,
+                selection.PermanentSeed, selection.Phase1Seed, selection.Phase2Seed, selection.Phase3Seed);
+            if (context.IsValid)
+            {
+                error = string.Empty;
+                return true;
+            }
+
+            OutgameRequestSelectionStore.Clear();
+            error = $"Invalid pending OUTGAME request selection: requestId='{selection.RequestId}', difficulty={selection.Difficulty}, requestType={selection.RequestType}.";
+            return false;
         }
 
         private void OnDestroy()

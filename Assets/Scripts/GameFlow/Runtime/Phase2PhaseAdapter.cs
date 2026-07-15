@@ -42,6 +42,7 @@ namespace HATAGONG.GameFlow
         public bool RendererInitialized => _orchestrator != null && _orchestrator.RendererInitialized;
         public int OwnedRenderTextureCount => _orchestrator?.OwnedRenderTextureCount ?? 0;
         public int RuntimeGenerationCount { get; private set; }
+        public GameRunContext RunContext { get; private set; }
 
         public event Action PhaseCleared;
         public event Action PhaseExitReady;
@@ -80,6 +81,7 @@ namespace HATAGONG.GameFlow
                 _exitReadyRaised = false;
                 _completionStarted = false;
                 RuntimeGenerationCount++;
+                RunContext = context;
                 SetInputEnabled(false);
                 return true;
             }

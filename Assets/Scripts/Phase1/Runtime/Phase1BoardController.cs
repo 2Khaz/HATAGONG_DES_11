@@ -19,28 +19,31 @@ namespace HATAGONG.Phase1
         [SerializeField] private int currentSeed; [SerializeField] private string currentBagId,currentLayoutHash,currentVariantHash;
         private readonly Phase1ShuffleBag shuffle=new();private readonly Dictionary<Phase1Difficulty,Queue<string>> hashes=new();private readonly List<Phase1TileView> views=new();private Phase1BoardState state;private int remaining,totalHits;private float started;private bool cleared,smokeStarted,prepared;
         public event Action Phase1ClearConditionReached;public event Action<Phase1BoardState> Phase1Cleared;public Phase1HitResult LastHitResult{get;private set;}public bool IsPrepared=>prepared&&state!=null;
+        public int CurrentSeed=>currentSeed;public string CurrentLayoutHash=>currentLayoutHash;public string CurrentVariantHash=>currentVariantHash;
         public bool CanPlayTouchEffect=>IsPrepared&&!cleared&&sessionController&&sessionController.CanAcceptGameplayInput&&inputController&&inputController.InputEnabled;
         private void Start(){if(config){config.EnsureDefaults();generateOnStart=config.GenerateOnStart&&generateOnStart;}if(generateOnStart&&!IsPrepared)Prepare(difficulty);if(runSmokeTestOnStart&&state!=null)RunSmokeTestImmediate();}
         private void Update(){if(runSmokeTestOnStart&&state!=null&&!smokeStarted){smokeStarted=true;StartCoroutine(RunSmokeTest());}}
         [ContextMenu("Generate Board")] public void GenerateBoard(){if(!IsPrepared)Prepare(difficulty);}
         [ContextMenu("Regenerate Board")] public void RegenerateBoard(){ClearPreparedBoard();Prepare(difficulty);}
-        public bool Prepare(Phase1Difficulty targetDifficulty)
+        public bool Prepare(Phase1Difficulty targetDifficulty)=>PrepareInternal(targetDifficulty,null);
+        public bool Prepare(Phase1Difficulty targetDifficulty,int requestedSeed)=>requestedSeed>0&&PrepareInternal(targetDifficulty,requestedSeed);
+        private bool PrepareInternal(Phase1Difficulty targetDifficulty,int? requestedSeed)
         {
             inputController?.SetInputEnabled(false);
-            if(IsPrepared)return state.Difficulty==targetDifficulty;
+            if(IsPrepared)return state.Difficulty==targetDifficulty&&(!requestedSeed.HasValue||state.Seed==requestedSeed.Value);
             difficulty=targetDifficulty;
-            if(Generate()){prepared=true;return true;}
+            if(Generate(requestedSeed)){prepared=true;return true;}
             ClearPreparedBoard();
             return false;
         }
-        private bool Generate()
+        private bool Generate(int? requestedSeed=null)
         {
             if(!config||!fieldRoot||!tileContainer||!tilePrefab||!inputController||!scoreController||!feedbackController){Debug.LogError("[Phase1] Required Inspector references are missing.");return false;}
-            config.EnsureDefaults();if(!config.ValidateAllBags())return false;var seed=useFixedSeed?fixedSeed:Environment.TickCount;var random=new System.Random(seed);var generator=new Phase1BoardGenerator(config);Phase1BoardState next=null;
+            config.EnsureDefaults();if(!config.ValidateAllBags())return false;var seed=requestedSeed??(useFixedSeed?fixedSeed:Environment.TickCount);var random=new System.Random(seed);var generator=new Phase1BoardGenerator(config);Phase1BoardState next=null;
             if(useFixedSeed&&ignoreSessionHistoryForDebug&&state!=null){var replayBag=config.Bags.FirstOrDefault(x=>x.Id==state.BagId);if(replayBag!=null&&generator.TryGenerate(difficulty,replayBag,fixedSeed,true,out var replay)){Commit(replay);return true;}Debug.LogError($"[Phase1] Fixed-seed debug replay failed for bag={state.BagId}, seed={fixedSeed}.");return false;}
             var bags=shuffle.OrderedCandidates(difficulty,config.Bags,random).Select(id=>config.Bags.First(x=>x.Id==id)).ToList();
-            for(int b=0;b<bags.Count&&next==null;b++){int attempts=b==0?config.CurrentBagAttempts:config.AlternativeBagAttempts;for(int a=0;a<attempts;a++){int attemptSeed=seed+(b*1000)+a;if(generator.TryGenerate(difficulty,bags[b],attemptSeed,true,out var candidate)&&AcceptHash(candidate.LayoutHash)){next=candidate;break;}}}
-            if(next==null)foreach(var bag in bags){for(int a=0;a<config.AlternativeBagAttempts;a++){int attemptSeed=seed+100000+a;if(generator.TryGenerate(difficulty,bag,attemptSeed,false,out var candidate)&&AcceptHash(candidate.LayoutHash)){next=candidate;break;}}if(next!=null)break;}
+            for(int b=0;b<bags.Count&&next==null;b++){int attempts=requestedSeed.HasValue?1:(b==0?config.CurrentBagAttempts:config.AlternativeBagAttempts);for(int a=0;a<attempts;a++){int attemptSeed=requestedSeed??(seed+(b*1000)+a);if(generator.TryGenerate(difficulty,bags[b],attemptSeed,true,out var candidate)&&(requestedSeed.HasValue||AcceptHash(candidate.LayoutHash))){next=candidate;break;}}}
+            if(next==null&&!requestedSeed.HasValue)foreach(var bag in bags){for(int a=0;a<config.AlternativeBagAttempts;a++){int attemptSeed=seed+100000+a;if(generator.TryGenerate(difficulty,bag,attemptSeed,false,out var candidate)&&AcceptHash(candidate.LayoutHash)){next=candidate;break;}}if(next!=null)break;}
             if(next==null){Debug.LogError($"[Phase1] Generation failed. Bags tried: {string.Join(",",bags.Select(x=>x.Id))}");return false;}
             Commit(next);shuffle.MarkSuccessful(difficulty,next.BagId);RememberHash(next.LayoutHash);return true;
         }

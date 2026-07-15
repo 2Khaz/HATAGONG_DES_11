@@ -1,0 +1,5 @@
+RequestId,Enabled,RequestType,Difficulty,PermanentSeed,RequesterName,PortraitKey,Title,Description,Effect1Id,Effect2Id,Effect3Id
+REQ-N-EASY-001,TRUE,Normal,Easy,110001,김하늘,portrait_client_01,첫 번째 임시 의뢰,임시 기획 데이터입니다.\n효과가 없는 쉬운 의뢰입니다.,,,
+REQ-N-NORMAL-002,TRUE,Normal,Normal,220002,박구름,portrait_client_02,집중이 필요한 임시 의뢰,"임시 기획 데이터, ""집중"" 효과를 사용하는 보통 의뢰입니다.",EFFECT_FOCUS,,
+REQ-S-HARD-003,TRUE,Sudden,Hard,330003,이노을,portrait_client_03,긴급한 고난도 임시 의뢰,임시 기획 데이터입니다.\n두 가지 효과를 함께 참조합니다.,EFFECT_FOCUS,EFFECT_RUSH,
+REQ-S-NORMAL-004,TRUE,Sudden,Normal,440004,최새벽,portrait_client_04,복합 조건 임시 의뢰,임시 기획 데이터입니다.\n세 가지 효과를 참조하며 실제 인게임 효과는 적용하지 않습니다.,EFFECT_FOCUS,EFFECT_RUSH,EFFECT_BONUS

@@ -20,6 +20,7 @@ namespace HATAGONG.GameFlow
         public bool IsRunning { get; private set; }
         public bool IsCleared { get; private set; }
         public bool IsExitReady { get; private set; }
+        public GameRunContext RunContext { get; private set; }
 
         public event Action PhaseCleared;
         public event Action PhaseExitReady;
@@ -46,14 +47,17 @@ namespace HATAGONG.GameFlow
             if (!EnsureSubscribed()) return false;
             if (IsPrepared)
             {
-                return board.Prepare(phase1Difficulty);
+                bool prepared = context.HasSelectedRequest ? board.Prepare(phase1Difficulty, context.Phase1Seed) : board.Prepare(phase1Difficulty);
+                if (prepared) RunContext = context;
+                return prepared;
             }
 
             IsCleared = false;
             IsExitReady = false;
             IsRunning = false;
             _exitReadyRaised = false;
-            IsPrepared = board.Prepare(phase1Difficulty);
+            IsPrepared = context.HasSelectedRequest ? board.Prepare(phase1Difficulty, context.Phase1Seed) : board.Prepare(phase1Difficulty);
+            if (IsPrepared) RunContext = context;
             return IsPrepared;
         }
 

@@ -1,0 +1,4 @@
+EffectId,Enabled,EffectName,EffectIconKey,Description
+EFFECT_FOCUS,TRUE,집중 요청,request_effect_focus,임시 기획용 집중 특수효과 정의입니다.
+EFFECT_RUSH,TRUE,긴급 요청,request_effect_rush,"임시 기획용 긴급, 속도 특수효과 정의입니다."
+EFFECT_BONUS,TRUE,추가 보상,request_effect_bonus,"임시 기획용 ""추가 보상"" 특수효과 정의입니다."

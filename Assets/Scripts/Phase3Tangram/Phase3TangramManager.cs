@@ -74,6 +74,7 @@ namespace HATAGONG.Phase3Tangram
         public int PieceCount => pieces.Count;
         public int GuideCount => guide?.PolygonCount ?? 0;
         public long ActiveSeed => activeSeed;
+        public GameRunContext RunContext { get; private set; }
         public event Action PhaseCleared;
         public event Action PhaseExitReady;
 
@@ -85,13 +86,14 @@ namespace HATAGONG.Phase3Tangram
             try
             {
                 EnsureBuilt();
-                activeSeed = useFixedSeedForDebug ? fixedSeed : CreateRandomSeed();
+                activeSeed = context.HasSelectedRequest ? context.Phase3Seed : (useFixedSeedForDebug ? fixedSeed : CreateRandomSeed());
                 TangramGenerationResult generated = Phase3TangramGenerator.Generate(context.Difficulty, activeSeed);
                 if (!generated.Success) { Debug.LogError($"[Phase3Tangram] Generation failed: {generated.FailureReason}", this); return false; }
                 difficulty = context.Difficulty;
                 int expectedCount = Phase3TangramGenerator.PieceCount(difficulty);
                 if (generated.Pieces.Count != expectedCount) throw new InvalidOperationException($"Generated piece count mismatch: expected={expectedCount}, actual={generated.Pieces.Count}.");
                 BuildPuzzle(generated);
+                RunContext = context;
                 IsPrepared = true;
                 SetRuntimeVisible(false);
                 gameObject.SetActive(false);
