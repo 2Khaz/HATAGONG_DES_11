@@ -31,6 +31,25 @@ namespace HATAGONG.GameFlow.Editor
             foreach (var item in displays) Check(GameCountdownTimer.ToDisplayedSeconds(item.Item1) == item.Item2, "ceil " + item.Item1);
             foreach (int seconds in new[] { 90,60,10,9,1,0 }) { string text=GameCountdownTimer.FormatSeconds(seconds);Check(text==seconds.ToString()&&!text.Contains(":")&&(seconds>=10||text.Length==1),"integer format "+seconds); }
             foreach (double invalid in new[] { 0d,-1d,double.NaN,double.PositiveInfinity,double.NegativeInfinity }) { var value = new GameCountdownTimer(invalid); Check(value.IsExpired && value.DisplayedSeconds == 0, "invalid duration"); }
+
+            var oneSecondTimer = new GameCountdownTimer(1d); oneSecondTimer.StartTimer();
+            var oneSecondGate = new TerminalPhaseClearCommitGate(); int oneSecondStops = 0;
+            Check(oneSecondGate.TryCommit(GameSessionState.Playing, GamePhaseId.Phase3, GamePhaseId.Phase3, () => { oneSecondStops++; oneSecondTimer.StopTimer(); }), "terminal clear commits with 1.0 second remaining");
+            oneSecondTimer.Tick(0.75d);
+            Check(!oneSecondTimer.IsExpired && oneSecondTimer.RemainingSeconds == 1d && oneSecondStops == 1, "terminal clear freezes 1.0 second timer");
+
+            var tenthSecondTimer = new GameCountdownTimer(0.1d); tenthSecondTimer.StartTimer();
+            var tenthSecondGate = new TerminalPhaseClearCommitGate(); int tenthSecondStops = 0;
+            Check(tenthSecondGate.TryCommit(GameSessionState.Playing, GamePhaseId.Phase3, GamePhaseId.Phase3, () => { tenthSecondStops++; tenthSecondTimer.StopTimer(); }), "terminal clear commits with 0.1 second remaining");
+            Check(tenthSecondGate.TryCommit(GameSessionState.Playing, GamePhaseId.Phase3, GamePhaseId.Phase3, () => tenthSecondStops++), "terminal clear duplicate is idempotent");
+            tenthSecondTimer.Tick(0.75d);
+            Check(!tenthSecondTimer.IsExpired && tenthSecondTimer.RemainingSeconds == 0.1d && tenthSecondStops == 1 && tenthSecondGate.ShouldIgnoreTimerExpiration, "terminal clear prevents late expiration and duplicate stop");
+
+            var expiredGate = new TerminalPhaseClearCommitGate();
+            Check(!expiredGate.TryCommit(GameSessionState.Expired, GamePhaseId.Phase3, GamePhaseId.Phase3, null) && !expiredGate.IsCommitted, "expired session cannot be revived");
+            Check(!expiredGate.TryCommit(GameSessionState.Playing, GamePhaseId.Phase2, GamePhaseId.Phase2, null), "non-terminal phase cannot commit terminal clear");
+            tenthSecondGate.Reset();
+            Check(!tenthSecondGate.IsCommitted && !tenthSecondGate.ShouldIgnoreTimerExpiration, "new session reset releases terminal clear lock");
             Debug.Log($"[GameTimer][Test] result={passed}/{total}, failures=0");
         }
     }

@@ -18,6 +18,8 @@ namespace HATAGONG.Phase2.Editor
     {
         private const string ScenePath = "Assets/Scenes/INGAME.unity";
         private const string MaterialPath = "Assets/Materials/Phase2/Phase2BlackCoverMask.mat";
+        private const string DustPath = "Assets/Resources/Ingame/Floor/Dust.png";
+        private const string PaintPath = "Assets/Resources/Ingame/Floor/Paint.png";
 
         [MenuItem("Tools/HATAGONG/Phase2/Validate Stage 5B Scene Integration")]
         public static void Validate()
@@ -68,18 +70,19 @@ namespace HATAGONG.Phase2.Editor
             check(RectEquals(phase1Rect, phase2Rect), "Phase1 and Phase2 roots have equal RectTransform layout");
             check(phase2Transform.childCount == 3, "Phase2Root has exactly three production layers");
 
-            Transform baseLayer = phase2Transform.Find("CementBaseLayer_Gray");
-            Transform coverLayer = phase2Transform.Find("BlackCoverLayer");
+            Transform baseLayer = phase2Transform.Find("PaintLayer");
+            Transform coverLayer = phase2Transform.Find("DustLayer");
             Transform inputLayer = phase2Transform.Find("Phase2InputSurface");
             check(baseLayer && coverLayer && inputLayer, "all three named Phase2 layers exist");
             check(baseLayer.GetSiblingIndex() == 0 && coverLayer.GetSiblingIndex() == 1 && inputLayer.GetSiblingIndex() == 2, "Phase2 layer sibling order exact");
             check(IsFullStretch(baseLayer as RectTransform) && IsFullStretch(coverLayer as RectTransform) && IsFullStretch(inputLayer as RectTransform), "all Phase2 layers full stretch");
 
             Image baseImage = baseLayer.GetComponent<Image>();
-            check(baseImage && Approximately(baseImage.color.a, 1f) && !baseImage.raycastTarget, "gray base image is opaque and non-raycast");
+            Sprite paintSprite=AssetDatabase.LoadAssetAtPath<Sprite>(PaintPath);Sprite dustSprite=AssetDatabase.LoadAssetAtPath<Sprite>(DustPath);
+            check(baseImage && baseImage.sprite==paintSprite && Approximately(baseImage.color.a, 1f) && !baseImage.raycastTarget, "paint base image is imported, linked, opaque and non-raycast");
             RawImage cover = coverLayer.GetComponent<RawImage>();
-            check(cover && Approximately(cover.color.r, 0f) && Approximately(cover.color.g, 0f) && Approximately(cover.color.b, 0f) && Approximately(cover.color.a, 1f) && !cover.raycastTarget, "black cover is opaque and non-raycast");
-            check(cover.material && cover.material.shader && cover.material.shader.name == Phase2MaskPresenter.ShaderName && Approximately(cover.material.GetFloat("_MaskBound"), 0f), "cover material guarantees black before mask binding");
+            check(cover && Approximately(cover.color.r, 1f) && Approximately(cover.color.g, 1f) && Approximately(cover.color.b, 1f) && Approximately(cover.color.a, 1f) && !cover.raycastTarget, "dust cover is white-tinted and non-raycast");
+            check(cover.material && cover.material.shader && cover.material.shader.name == Phase2MaskPresenter.ShaderName && dustSprite, "cover material and imported dust Sprite are available before mask binding");
             Image inputImage = inputLayer.GetComponent<Image>();
             check(inputImage && Approximately(inputImage.color.a, 0f) && inputImage.raycastTarget, "input surface is transparent and raycastable");
             check(coverLayer.GetComponent<Phase2MaskPresenter>() && inputLayer.GetComponent<Phase2PointerInputController>(), "presenter and pointer components exist");
@@ -145,9 +148,11 @@ namespace HATAGONG.Phase2.Editor
             {
                 GameScoreController score = root.AddComponent<GameScoreController>();
                 Phase2PhaseAdapter adapter = root.AddComponent<Phase2PhaseAdapter>();
-                GameObject coverObject = CreateChild(root, "BlackCover", typeof(RawImage));
+                Sprite dustSprite=AssetDatabase.LoadAssetAtPath<Sprite>(DustPath);Sprite paintSprite=AssetDatabase.LoadAssetAtPath<Sprite>(PaintPath);
+                GameObject paintObject = CreateChild(root, "Paint", typeof(Image));
+                GameObject coverObject = CreateChild(root, "DustCover", typeof(RawImage));
                 RawImage cover = coverObject.GetComponent<RawImage>();
-                cover.color = Color.black;
+                cover.color = Color.white;
                 cover.material = material;
                 Phase2MaskPresenter presenter = coverObject.AddComponent<Phase2MaskPresenter>();
                 GameObject inputObject = CreateChild(root, "Input", typeof(Image));
@@ -155,7 +160,7 @@ namespace HATAGONG.Phase2.Editor
                 inputImage.color = new Color(1f, 1f, 1f, 0f);
                 inputImage.raycastTarget = true;
                 Phase2PointerInputController pointer = inputObject.AddComponent<Phase2PointerInputController>();
-                SetReferences(presenter, ("cover", cover), ("materialTemplate", material));
+                SetReferences(presenter, ("paintedLayer", paintObject.GetComponent<Image>()), ("cover", cover), ("materialTemplate", material), ("dustSprite", dustSprite), ("paintSprite", paintSprite));
                 SetReferences(pointer, ("adapter", adapter), ("inputSurface", inputObject.GetComponent<RectTransform>()));
                 SetReferences(adapter, ("maskPresenter", presenter), ("pointerInput", pointer), ("scoreController", score));
 
@@ -167,7 +172,7 @@ namespace HATAGONG.Phase2.Editor
                 readback = ReadMask(firstMask, readback);
                 check(MaximumRed(readback) == 0, "prepared mask is cleared to zero");
                 check(presenter.IsBound && ReferenceEquals(presenter.BoundTexture, firstMask) && presenter.HasRuntimeMaterial, "presenter binds runtime mask with one material instance");
-                check(Approximately(Phase2MaskPresenter.CoverAlphaFromMask(MaximumRed(readback) / 255f), 1f), "initial zero mask produces opaque black cover");
+                check(Approximately(Phase2MaskPresenter.CoverAlphaFromMask(MaximumRed(readback) / 255f), 1f), "initial zero mask produces opaque dust cover");
                 Texture sharedTextureBefore = material.GetTexture("_MainTex");
                 float sharedMaskBoundBefore = material.GetFloat("_MaskBound");
                 float sharedCompletionFillBefore = material.GetFloat("_CompletionFill");
@@ -402,7 +407,7 @@ namespace HATAGONG.Phase2.Editor
                 readback.ReadPixels(new Rect(0, 0, 1, 1), 0, 0, false);
                 readback.Apply(false, false);
                 Color pixel = readback.GetPixel(0, 0);
-                check(pixel.r <= 0.01f && pixel.g <= 0.01f && pixel.b <= 0.01f && pixel.a >= 0.99f, "unbound default-white mask renders opaque black on GPU");
+                check(pixel.a >= 0.99f, "unbound default-white mask renders an opaque dust layer on GPU");
                 check(ReferenceEquals(sharedMaterial.GetTexture("_MainTex"), sharedTextureBefore) && Approximately(sharedMaterial.GetFloat("_MaskBound"), sharedMaskBoundBefore) && Approximately(sharedMaterial.GetFloat("_CompletionFill"), sharedCompletionFillBefore), "unbound GPU validation leaves the shared material unchanged");
             }
             finally
@@ -430,7 +435,8 @@ namespace HATAGONG.Phase2.Editor
                 RawImage cover = owner.GetComponent<RawImage>();
                 cover.material = sharedMaterial;
                 Phase2MaskPresenter presenter = owner.AddComponent<Phase2MaskPresenter>();
-                SetReferences(presenter, ("cover", cover), ("materialTemplate", sharedMaterial));
+                GameObject paintObject=CreateChild(owner,"Paint",typeof(Image));Sprite dustSprite=AssetDatabase.LoadAssetAtPath<Sprite>(DustPath);Sprite paintSprite=AssetDatabase.LoadAssetAtPath<Sprite>(PaintPath);
+                SetReferences(presenter, ("paintedLayer", paintObject.GetComponent<Image>()), ("cover", cover), ("materialTemplate", sharedMaterial), ("dustSprite", dustSprite), ("paintSprite", paintSprite));
                 externalMask = new RenderTexture(2, 2, 0, RenderTextureFormat.ARGB32)
                 {
                     hideFlags = HideFlags.HideAndDontSave
@@ -470,7 +476,8 @@ namespace HATAGONG.Phase2.Editor
                 RawImage cover = owner.GetComponent<RawImage>();
                 cover.material = sharedMaterial;
                 Phase2MaskPresenter presenter = owner.AddComponent<Phase2MaskPresenter>();
-                SetReferences(presenter, ("cover", cover), ("materialTemplate", sharedMaterial));
+                GameObject paintObject=CreateChild(owner,"Paint",typeof(Image));Sprite dustSprite=AssetDatabase.LoadAssetAtPath<Sprite>(DustPath);Sprite paintSprite=AssetDatabase.LoadAssetAtPath<Sprite>(PaintPath);
+                SetReferences(presenter, ("paintedLayer", paintObject.GetComponent<Image>()), ("cover", cover), ("materialTemplate", sharedMaterial), ("dustSprite", dustSprite), ("paintSprite", paintSprite));
                 check(owner.activeSelf && owner.activeInHierarchy && presenter.enabled, "presenter OnDestroy fixture host is active");
 
                 externalMask = new RenderTexture(2, 2, 0, RenderTextureFormat.ARGB32)

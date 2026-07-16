@@ -108,7 +108,7 @@ namespace HATAGONG.Phase3Tangram
             return TangramGenerationResult.Succeeded(pieces.AsReadOnly(), totalAttempts);
         }
 
-        public static int PieceCount(GameDifficulty difficulty) => difficulty == GameDifficulty.Easy ? 6 : difficulty == GameDifficulty.Normal ? 7 : 8;
+        public static int PieceCount(GameDifficulty difficulty) => difficulty == GameDifficulty.Easy ? 7 : difficulty == GameDifficulty.Normal ? 9 : 11;
 
         public static float GetArea(IReadOnlyList<Vector2> polygon)
         {

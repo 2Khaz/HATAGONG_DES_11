@@ -26,6 +26,9 @@ namespace HATAGONG.Phase3Tangram
         [SerializeField] private RectTransform deckHost;
         [SerializeField] private Image deckPanel;
         [SerializeField] private Sprite deckSprite;
+        [SerializeField] private Sprite deckNavigationButtonSprite;
+        [SerializeField] private Sprite completionSprite;
+        [SerializeField] private Material completionShineMaterial;
         [SerializeField] private bool useFixedSeedForDebug;
         [FormerlySerializedAs("requestedSeed")]
         [SerializeField] private long fixedSeed = 260714;
@@ -38,7 +41,9 @@ namespace HATAGONG.Phase3Tangram
         private Button previousButton;
         private Button nextButton;
         private Text pageLabel;
-        private RawImage completionImage;
+        private Image completionImage;
+        private Image completionShineImage;
+        private Material completionShineRuntimeMaterial;
         private Transform worldRoot;
         private Phase3TangramGuide guide;
         private Phase3TangramPiece selectedPiece;
@@ -64,6 +69,14 @@ namespace HATAGONG.Phase3Tangram
         private Sprite deckFrame2;
         private Sprite deckFrame3;
         private Coroutine deckAnimation;
+        private Coroutine completionShineAnimation;
+        private Func<GamePhaseId, bool> terminalClearCommit;
+        private bool terminalClearCommitted;
+        private bool completionPresentationFinishing;
+        private bool destroying;
+
+        private const float CompletionShineDuration = 0.75f;
+        private const float CompletionShineWidth = 0.22f;
 
         public GamePhaseId PhaseId => GamePhaseId.Phase3;
         public bool IsPrepared { get; private set; }
@@ -78,10 +91,14 @@ namespace HATAGONG.Phase3Tangram
         public event Action PhaseCleared;
         public event Action PhaseExitReady;
 
+        public void BindTerminalClearCommit(Func<GamePhaseId, bool> commit) => terminalClearCommit = commit;
+
         public bool Prepare(GameRunContext context)
         {
+            if (IsCleared && terminalClearCommitted && !IsExitReady) FinishCompletionPresentation();
             SetInputEnabled(false);
             IsPrepared = IsRunning = IsCleared = IsExitReady = false;
+            terminalClearCommitted = false;
             if (!context.IsValid || !canvas || !graphicRaycaster || !eventSystem || !worldCamera || !scoreController || !deckHost || !deckPanel || !deckSprite || !EnsureDeckFrames()) return false;
             try
             {
@@ -123,10 +140,12 @@ namespace HATAGONG.Phase3Tangram
 
         public void Deactivate()
         {
+            if (IsCleared && terminalClearCommitted && !IsExitReady) FinishCompletionPresentation();
             SetInputEnabled(false);
             IsRunning = false;
             selectedPiece = draggingPiece = null;
             StopDeckOpeningAnimation();
+            StopCompletionShine();
             SetRuntimeVisible(false);
             RestoreCanvas();
             gameObject.SetActive(false);
@@ -225,12 +244,35 @@ namespace HATAGONG.Phase3Tangram
             if (transform.childCount != 0) throw new InvalidOperationException("Phase3Root must be empty before Tangram runtime construction.");
             field = CreateRect("Phase3 Tangram Field", transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1250f, 1250f));
             AddInputSurface(CreateStretch("Tangram Field Input", field));
-            RectTransform completion = CreateStretch("Tangram Completion Image", field);
-            completionImage = completion.gameObject.AddComponent<RawImage>();
-            completionImage.texture = Resources.Load<Texture2D>("Phase3/testbase");
+            RectTransform completionRoot = CreateStretch("Tangram Completion Root", field);
+            RectTransform completion = CreateStretch("Tangram Completion Image", completionRoot);
+            completionImage = completion.gameObject.AddComponent<Image>();
+            completionImage.sprite = completionSprite;
             completionImage.color = Color.white;
             completionImage.raycastTarget = false;
-            completionImage.gameObject.SetActive(false);
+            completionImage.preserveAspect = false;
+            RectTransform shine = CreateStretch("Tangram Completion Shine", completionRoot);
+            completionShineImage = shine.gameObject.AddComponent<Image>();
+            completionShineImage.sprite = completionSprite;
+            completionShineImage.color = Color.white;
+            completionShineImage.raycastTarget = false;
+            completionShineImage.preserveAspect = false;
+            if (completionShineMaterial && completionShineMaterial.shader && completionShineMaterial.shader.isSupported)
+            {
+                try
+                {
+                    completionShineRuntimeMaterial = new Material(completionShineMaterial) { name = "Phase3CompletionShine (Runtime)" };
+                    completionShineRuntimeMaterial.SetFloat("_Progress", -CompletionShineWidth);
+                    completionShineRuntimeMaterial.SetFloat("_ShineWidth", CompletionShineWidth);
+                    completionShineImage.material = completionShineRuntimeMaterial;
+                }
+                catch (Exception exception)
+                {
+                    completionShineRuntimeMaterial = null;
+                    Debug.LogWarning("[Phase3Tangram] Completion shine material unavailable: " + exception.Message, this);
+                }
+            }
+            completionRoot.gameObject.SetActive(false);
             deck = CreateStretch("Phase3 Tangram Deck", deckHost);
             Image deckBackground = deck.gameObject.AddComponent<Image>();
             deckBackground.color = Color.clear;
@@ -242,8 +284,8 @@ namespace HATAGONG.Phase3Tangram
                 deckSlots[i] = CreateRect($"TangramDeckSlot{i + 1}", deck, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(x[i], -2f), new Vector2(250f, 190f));
                 AddInputSurface(deckSlots[i]);
             }
-            previousButton = CreateButton("TangramPrevious", deck, new Vector2(0f, 0.5f), new Vector2(46f, 0f), "<");
-            nextButton = CreateButton("TangramNext", deck, new Vector2(1f, 0.5f), new Vector2(-46f, 0f), ">");
+            previousButton = CreateDeckNavigationButton("TangramPrevious", deck, new Vector2(0f, 0.5f), new Vector2(48.5f, 0f), deckNavigationButtonSprite, true);
+            nextButton = CreateDeckNavigationButton("TangramNext", deck, new Vector2(1f, 0.5f), new Vector2(-48.5f, 0f), deckNavigationButtonSprite, false);
             previousButton.onClick.AddListener(() => SetPage(page - 1));
             nextButton.onClick.AddListener(() => SetPage(page + 1));
             RectTransform pageLabelRect = CreateRect("TangramPageCount", deck, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -17f), new Vector2(260f, 30f));
@@ -279,7 +321,8 @@ namespace HATAGONG.Phase3Tangram
                 pieces.Add(piece);
             }
             page = 0;
-            completionImage.gameObject.SetActive(false);
+            StopCompletionShine();
+            completionImage.transform.parent.gameObject.SetActive(false);
             RefreshLayout();
         }
 
@@ -379,15 +422,93 @@ namespace HATAGONG.Phase3Tangram
 
         private void CheckCompletion()
         {
+            if (IsCleared) return;
             for (int i = 0; i < pieces.Count; i++) if (!pieces[i].IsPlaced) return;
+            if (terminalClearCommit == null || !terminalClearCommit(GamePhaseId.Phase3)) return;
+            terminalClearCommitted = true;
             IsCleared = true;
             IsRunning = false;
             ApplyInputGate();
             guide.SetVisible(false);
             for (int i = 0; i < pieces.Count; i++) pieces[i].SetVisible(false);
-            completionImage.gameObject.SetActive(true);
+            completionImage.transform.parent.gameObject.SetActive(true);
             scoreController.AddScore(1000, GamePhaseId.Phase3, ScoreReason.Other);
             PhaseCleared?.Invoke();
+            StartCompletionPresentation();
+        }
+
+        private void StartCompletionPresentation()
+        {
+            if (IsExitReady) return;
+            StopCompletionShine();
+            if (!isActiveAndEnabled || !completionShineImage || !completionSprite || !completionShineRuntimeMaterial || !completionShineRuntimeMaterial.shader || !completionShineRuntimeMaterial.shader.isSupported)
+            {
+                FinishCompletionPresentation();
+                return;
+            }
+            try
+            {
+                completionShineRuntimeMaterial.SetFloat("_Progress", -CompletionShineWidth);
+                completionShineAnimation = StartCoroutine(CompletionShineRoutine());
+                if (completionShineAnimation == null) FinishCompletionPresentation();
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("[Phase3Tangram] Completion shine skipped: " + exception.Message, this);
+                FinishCompletionPresentation();
+            }
+        }
+
+        private IEnumerator CompletionShineRoutine()
+        {
+            try
+            {
+                completionShineImage.gameObject.SetActive(true);
+                float elapsed = 0f;
+                while (elapsed < CompletionShineDuration)
+                {
+                    elapsed += Time.unscaledDeltaTime;
+                    float normalized = Mathf.Clamp01(elapsed / CompletionShineDuration);
+                    completionShineRuntimeMaterial.SetFloat("_Progress", Mathf.Lerp(-CompletionShineWidth, 2f + CompletionShineWidth, normalized));
+                    yield return null;
+                }
+            }
+            finally
+            {
+                completionShineAnimation = null;
+                if (!destroying && !completionPresentationFinishing && IsCleared && terminalClearCommitted && !IsExitReady)
+                    FinishCompletionPresentation();
+            }
+        }
+
+        private void FinishCompletionPresentation()
+        {
+            if (completionPresentationFinishing || IsExitReady) return;
+            completionPresentationFinishing = true;
+            try
+            {
+                StopCompletionShine();
+                RaiseExitReady();
+            }
+            finally
+            {
+                completionPresentationFinishing = false;
+            }
+        }
+
+        private void StopCompletionShine()
+        {
+            if (completionShineAnimation != null)
+            {
+                StopCoroutine(completionShineAnimation);
+                completionShineAnimation = null;
+            }
+            if (completionShineImage) completionShineImage.gameObject.SetActive(false);
+        }
+
+        private void RaiseExitReady()
+        {
+            if (IsExitReady) return;
             IsExitReady = true;
             PhaseExitReady?.Invoke();
         }
@@ -525,10 +646,13 @@ namespace HATAGONG.Phase3Tangram
 
         private void OnDestroy()
         {
+            destroying = true;
             StopDeckOpeningAnimation();
+            StopCompletionShine();
             RestoreCanvas();
             ClearPieces();
             guide?.Dispose();
+            if (completionShineRuntimeMaterial) Destroy(completionShineRuntimeMaterial);
             if (worldRoot) Destroy(worldRoot.gameObject);
         }
 
@@ -702,22 +826,16 @@ namespace HATAGONG.Phase3Tangram
             return rect;
         }
 
-        private static Button CreateButton(string name, Transform parent, Vector2 anchor, Vector2 position, string label)
+        private static Button CreateDeckNavigationButton(string name, Transform parent, Vector2 anchor, Vector2 position, Sprite sprite, bool mirrorHorizontally)
         {
-            RectTransform rect = CreateRect(name, parent, anchor, anchor, position, new Vector2(72f, 170f));
+            RectTransform rect = CreateRect(name, parent, anchor, anchor, position, new Vector2(97f, 148f));
             Image image = rect.gameObject.AddComponent<Image>();
-            image.color = new Color(0.18f, 0.42f, 0.78f, 0.9f);
+            image.sprite = sprite;
+            image.color = Color.white;
+            image.preserveAspect = true;
             Button button = rect.gameObject.AddComponent<Button>();
             button.targetGraphic = image;
-            RectTransform labelRect = CreateStretch("Label", rect);
-            Text text = labelRect.gameObject.AddComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            text.fontSize = 38;
-            text.fontStyle = FontStyle.Bold;
-            text.alignment = TextAnchor.MiddleCenter;
-            text.color = Color.white;
-            text.raycastTarget = false;
-            text.text = label;
+            if (mirrorHorizontally) rect.localScale = new Vector3(-1f, 1f, 1f);
             return button;
         }
 

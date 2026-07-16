@@ -34,21 +34,24 @@ namespace HATAGONG.Phase2.Editor
             ConfigureRootRect(phase2Rect);
             phase2Rect.SetSiblingIndex(2);
 
-            GameObject baseLayer = FindOrCreate(phase2Root, "CementBaseLayer_Gray");
+            GameObject baseLayer = FindOrCreate(phase2Root, "PaintLayer");
             ConfigureStretch(baseLayer.GetComponent<RectTransform>());
             baseLayer.transform.SetSiblingIndex(0);
             Image baseImage = GetOrAdd<Image>(baseLayer);
             Undo.RecordObject(baseImage, "Configure Phase 2 base layer");
-            baseImage.sprite = null;
-            baseImage.color = new Color(0.48f, 0.48f, 0.48f, 1f);
+            Sprite paint=AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Resources/Ingame/Floor/Paint.png");
+            Sprite dust=AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Resources/Ingame/Floor/Dust.png");
+            if(!paint||!dust)throw new InvalidOperationException("Required Phase 2 Dust/Paint Sprite assets are missing or not imported as Sprite.");
+            baseImage.sprite = paint;
+            baseImage.color = Color.white;
             baseImage.raycastTarget = false;
 
-            GameObject coverLayer = FindOrCreate(phase2Root, "BlackCoverLayer");
+            GameObject coverLayer = FindOrCreate(phase2Root, "DustLayer");
             ConfigureStretch(coverLayer.GetComponent<RectTransform>());
             coverLayer.transform.SetSiblingIndex(1);
             RawImage cover = GetOrAdd<RawImage>(coverLayer);
             Undo.RecordObject(cover, "Configure Phase 2 cover layer");
-            cover.color = Color.black;
+            cover.color = Color.white;
             cover.texture = null;
             cover.material = material;
             cover.raycastTarget = false;
@@ -72,7 +75,7 @@ namespace HATAGONG.Phase2.Editor
             if (!score || !session || !phase1Adapter || !phase1Board)
                 throw new InvalidOperationException("Required Stage 5A GameFlow references are missing.");
 
-            SetReferences(presenter, ("cover", cover), ("materialTemplate", material));
+            SetReferences(presenter, ("paintedLayer", baseImage), ("cover", cover), ("materialTemplate", material), ("dustSprite", dust), ("paintSprite", paint));
             SetReferences(pointer, ("adapter", adapter), ("inputSurface", inputLayer.GetComponent<RectTransform>()));
             SetReferences(adapter, ("maskPresenter", presenter), ("pointerInput", pointer), ("scoreController", score));
             SetObjectArray(session, "phases", new UnityEngine.Object[] { phase1Adapter, adapter });

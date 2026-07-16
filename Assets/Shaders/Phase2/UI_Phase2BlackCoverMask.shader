@@ -3,6 +3,7 @@ Shader "HATAGONG/Phase2/UI Black Cover Mask"
     Properties
     {
         [PerRendererData] _MainTex ("Paint Mask", 2D) = "black" {}
+        _DustTex ("Dust Layer", 2D) = "white" {}
         _Color ("Tint", Color) = (1,1,1,1)
         _MaskBound ("Mask Bound", Float) = 0
         _CompletionFill ("Completion Fill", Range(0,1)) = 0
@@ -74,6 +75,7 @@ Shader "HATAGONG/Phase2/UI Black Cover Mask"
             };
 
             sampler2D _MainTex;
+            sampler2D _DustTex;
             float4 _MainTex_ST;
             fixed4 _Color;
             float _MaskBound;
@@ -95,14 +97,15 @@ Shader "HATAGONG/Phase2/UI Black Cover Mask"
             fixed4 Frag(Varyings input) : SV_Target
             {
                 half mask = max(tex2D(_MainTex, input.texcoord).r * saturate(_MaskBound), saturate(_CompletionFill));
-                fixed alpha = (1.0h - mask) * input.color.a;
+                fixed4 dust = tex2D(_DustTex, input.texcoord);
+                fixed alpha = dust.a * (1.0h - mask) * input.color.a;
                 #ifdef UNITY_UI_CLIP_RECT
                 alpha *= UnityGet2DClipping(input.worldPosition.xy, _ClipRect);
                 #endif
                 #ifdef UNITY_UI_ALPHACLIP
                 clip(alpha - 0.001h);
                 #endif
-                return fixed4(0.0h, 0.0h, 0.0h, alpha);
+                return fixed4(dust.rgb * input.color.rgb, alpha);
             }
             ENDCG
         }

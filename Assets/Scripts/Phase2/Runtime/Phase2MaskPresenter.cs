@@ -9,9 +9,13 @@ namespace HATAGONG.Phase2
         public const string ShaderName = "HATAGONG/Phase2/UI Black Cover Mask";
         private static readonly int MaskBoundId = Shader.PropertyToID("_MaskBound");
         private static readonly int CompletionFillId = Shader.PropertyToID("_CompletionFill");
+        private static readonly int DustTextureId = Shader.PropertyToID("_DustTex");
 
+        [SerializeField] private Image paintedLayer;
         [SerializeField] private RawImage cover;
         [SerializeField] private Material materialTemplate;
+        [SerializeField] private Sprite dustSprite;
+        [SerializeField] private Sprite paintSprite;
         private Material _runtimeMaterial;
         private float _completionDuration;
         private float _completionElapsed;
@@ -25,7 +29,7 @@ namespace HATAGONG.Phase2
 
         public bool Bind(RenderTexture maskTexture)
         {
-            if (!cover || !materialTemplate || !maskTexture) return false;
+            if (!ConfigureFloorLayers() || !materialTemplate || !maskTexture) return false;
             CancelCompletion();
             ReleaseRuntimeMaterial();
             _runtimeMaterial = new Material(materialTemplate)
@@ -34,6 +38,7 @@ namespace HATAGONG.Phase2
                 hideFlags = HideFlags.DontSave
             };
             _runtimeMaterial.SetFloat(MaskBoundId, 1f);
+            _runtimeMaterial.SetTexture(DustTextureId, dustSprite.texture);
             SetCompletionFill(0f);
             cover.texture = maskTexture;
             cover.material = _runtimeMaterial;
@@ -89,6 +94,16 @@ namespace HATAGONG.Phase2
         private void Update()
         {
             AdvanceCompletion(Time.unscaledDeltaTime);
+        }
+
+        private bool ConfigureFloorLayers()
+        {
+            if (!paintedLayer || !cover || !paintSprite || !dustSprite) return false;
+            paintedLayer.sprite = paintSprite;
+            paintedLayer.color = Color.white;
+            paintedLayer.preserveAspect = false;
+            cover.color = Color.white;
+            return true;
         }
 
         private void CancelCompletion()

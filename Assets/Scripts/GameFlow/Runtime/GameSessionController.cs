@@ -1,10 +1,28 @@
 using System;
 using System.Collections.Generic;
 using HATAGONG.Outgame;
+using HATAGONG.Phase3Tangram;
 using UnityEngine;
 
 namespace HATAGONG.GameFlow
 {
+    public sealed class TerminalPhaseClearCommitGate
+    {
+        public bool IsCommitted { get; private set; }
+
+        public bool TryCommit(GameSessionState sessionState, GamePhaseId requestedPhase, GamePhaseId currentPhase, Action stopTimer)
+        {
+            if (sessionState != GameSessionState.Playing || requestedPhase != GamePhaseId.Phase3 || currentPhase != GamePhaseId.Phase3) return false;
+            if (IsCommitted) return true;
+            IsCommitted = true;
+            stopTimer?.Invoke();
+            return true;
+        }
+
+        public bool ShouldIgnoreTimerExpiration => IsCommitted;
+        public void Reset() => IsCommitted = false;
+    }
+
     public sealed class GameSessionController : MonoBehaviour
     {
         [SerializeField] private GameTimerController timer;
@@ -18,6 +36,7 @@ namespace HATAGONG.GameFlow
         private readonly GameSessionModel _model = new GameSessionModel();
         private readonly Dictionary<IGamePhase, Action> _exitReadyHandlers = new Dictionary<IGamePhase, Action>();
         private readonly GamePhaseExitReadyGate _exitReadyGate = new GamePhaseExitReadyGate();
+        private readonly TerminalPhaseClearCommitGate _terminalPhaseClearGate = new TerminalPhaseClearCommitGate();
         private GamePhaseRegistry _registry;
         private GamePhaseTransaction _phaseTransaction;
         private GameRunContext _runContext;
@@ -60,6 +79,7 @@ namespace HATAGONG.GameFlow
             timer.Timer.TimerExpired += OnTimerExpired;
             score.ResetForNewSession();
             timer.ResetTimer();
+            _terminalPhaseClearGate.Reset();
 
             if (!GamePhaseRegistry.TryCreate(phases, initialPhase, out _registry, out string registryError))
             {
@@ -68,6 +88,8 @@ namespace HATAGONG.GameFlow
             }
 
             _registry.DisableAllInput();
+            if (_registry.TryGet(GamePhaseId.Phase3, out IGamePhase terminalPhase) && terminalPhase is Phase3TangramManager phase3)
+                phase3.BindTerminalClearCommit(TryCommitTerminalPhaseClear);
             if (!_runContext.IsValid)
             {
                 FailInitialization(string.IsNullOrEmpty(_contextInitializationError)
@@ -139,6 +161,7 @@ namespace HATAGONG.GameFlow
 
         private void OnTimerExpired()
         {
+            if (_terminalPhaseClearGate.ShouldIgnoreTimerExpiration) return;
             if (!_model.SetState(GameSessionState.Expired)) return;
             _phaseTransaction?.SetCurrentInputEnabled(false);
             score.LockScore();
@@ -160,6 +183,12 @@ namespace HATAGONG.GameFlow
             _phaseTransaction?.SetCurrentInputEnabled(false);
             timer.StopTimer();
             score.LockScore();
+        }
+
+        public bool TryCommitTerminalPhaseClear(GamePhaseId phaseId)
+        {
+            GamePhaseId currentPhaseId = CurrentPhase != null ? CurrentPhase.PhaseId : default;
+            return _terminalPhaseClearGate.TryCommit(_model.CurrentState, phaseId, currentPhaseId, timer ? timer.StopTimer : null);
         }
 
         private void SubscribePhaseExitReady()
