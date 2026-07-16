@@ -8,7 +8,7 @@ namespace HATAGONG.Phase1
     {
         [SerializeField] private Phase1TileGrade grade;
         [SerializeField] private string gradeId, displayName;
-        [SerializeField, Range(-2,2)] private int hpModifier;
+        [SerializeField, Range(0,7)] private int hpModifier;
         [SerializeField] private int easyWeight, normalWeight, hardWeight;
         [SerializeField] private int easyMaxCount, normalMaxCount, hardMaxCount;
         [SerializeField] private bool enabled=true;

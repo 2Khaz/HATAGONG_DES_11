@@ -27,7 +27,7 @@ namespace HATAGONG.Phase1
         [SerializeField] private List<Phase1TileGradeVisualSet> gradeVisualSets = new();
         [SerializeField] private int minimumFinalTileHp=2,gradeAssignmentAttempts=20;
         [SerializeField] private Phase1TileGrade defaultFallbackGrade=Phase1TileGrade.Brown;
-        [SerializeField] private int easyModifierMin=-2,easyModifierMax=1,normalModifierMin=-1,normalModifierMax=2,hardModifierMin=0,hardModifierMax=4;
+        [SerializeField] private int easyModifierMin=0,easyModifierMax=30,normalModifierMin=0,normalModifierMax=41,hardModifierMin=0,hardModifierMax=55;
 
         public int BoardSize=>boardSize; public bool GenerateOnStart=>generateOnStart; public float TileDebounce=>tileDebounce;
         public int CurrentBagAttempts=>currentBagAttempts; public int AlternativeBagAttempts=>alternativeBagAttempts;
@@ -44,9 +44,9 @@ namespace HATAGONG.Phase1
 
         public int GetHp(Phase1Difficulty d, Phase1TileShape s) => d switch
         {
-            Phase1Difficulty.Easy => s switch { Phase1TileShape.OneByTwo=>2, Phase1TileShape.OneByThree=>4, Phase1TileShape.TwoByTwo=>7, Phase1TileShape.TwoByThree=>10, Phase1TileShape.ThreeByThree=>13, _=>0 },
-            Phase1Difficulty.Normal => s switch { Phase1TileShape.OneByOne=>6, Phase1TileShape.OneByTwo=>2, Phase1TileShape.OneByThree=>5, Phase1TileShape.TwoByTwo=>8, Phase1TileShape.TwoByThree=>10, Phase1TileShape.ThreeByThree=>14, _=>0 },
-            _ => s switch { Phase1TileShape.OneByOne=>7, Phase1TileShape.OneByTwo=>2, Phase1TileShape.OneByThree=>6, Phase1TileShape.TwoByTwo=>9, Phase1TileShape.TwoByThree=>10, _=>0 }
+            Phase1Difficulty.Easy => s switch { Phase1TileShape.OneByTwo=>8, Phase1TileShape.OneByThree=>14, Phase1TileShape.TwoByTwo=>20, Phase1TileShape.TwoByThree=>28, Phase1TileShape.ThreeByThree=>36, _=>0 },
+            Phase1Difficulty.Normal => s switch { Phase1TileShape.OneByOne=>22, Phase1TileShape.OneByTwo=>10, Phase1TileShape.OneByThree=>18, Phase1TileShape.TwoByTwo=>26, Phase1TileShape.TwoByThree=>34, Phase1TileShape.ThreeByThree=>40, _=>0 },
+            _ => s switch { Phase1TileShape.OneByOne=>28, Phase1TileShape.OneByTwo=>14, Phase1TileShape.OneByThree=>22, Phase1TileShape.TwoByTwo=>30, Phase1TileShape.TwoByThree=>40, _=>0 }
         };
         public Sprite GetSprite(Phase1TileGrade grade,Phase1TileShape shape,Phase1DamageState state,out bool fallback){var v=gradeVisualSets.Find(x=>x.Grade==grade);if(v!=null)return v.Get(shape,state,out fallback);fallback=true;return null;}
         public string GetVisualSetId(Phase1TileGrade grade)=>gradeVisualSets.Find(x=>x.Grade==grade)?.VisualSetId??grade.ToString().ToUpperInvariant();
@@ -57,11 +57,11 @@ namespace HATAGONG.Phase1
         public void EnsureDefaults()
         {
             if (bags.Count!=12) bags = new List<Phase1TileBagDefinition> {
-                B("EASY_A",0,0,2,1,1,1,5,38), B("EASY_B",0,1,0,2,1,1,5,39), B("EASY_C",0,1,1,2,2,0,6,40), B("EASY_D",0,2,0,3,0,1,6,38),
-                B("NORMAL_A",2,1,1,3,1,0,8,53), B("NORMAL_B",2,0,1,2,2,0,7,53), B("NORMAL_C",2,1,0,3,0,1,7,52), B("NORMAL_D",2,2,1,1,2,0,8,49),
-                B("HARD_A",3,3,2,1,1,0,10,58), B("HARD_B",4,1,1,1,2,0,9,65), B("HARD_C",3,2,4,0,1,0,10,59), B("HARD_D",3,2,0,3,1,0,9,62) };
+                B("EASY_A",0,0,2,1,1,1,5,112), B("EASY_B",0,1,0,2,1,1,5,112), B("EASY_C",0,1,1,2,2,0,6,118), B("EASY_D",0,2,0,3,0,1,6,112),
+                B("NORMAL_A",2,1,1,3,1,0,8,184), B("NORMAL_B",2,0,1,2,2,0,7,182), B("NORMAL_C",2,1,0,3,0,1,7,172), B("NORMAL_D",2,2,1,1,2,0,8,176),
+                B("HARD_A",3,3,2,1,1,0,10,240), B("HARD_B",4,1,1,1,2,0,9,258), B("HARD_C",3,2,4,0,1,0,10,240), B("HARD_D",3,2,0,3,1,0,9,242) };
             if(visuals.Count==0){visuals = new List<Phase1TileVisualDefinition>(); foreach(Phase1TileShape s in System.Enum.GetValues(typeof(Phase1TileShape))) visuals.Add(new Phase1TileVisualDefinition(s));}
-            if(gradeDefinitions.Count!=4)gradeDefinitions=new List<Phase1TileGradeDefinition>{new(Phase1TileGrade.Beige,"BEIGE","Beige",-1,40,20,10,0,0,0),new(Phase1TileGrade.Brown,"BROWN","Brown",0,35,40,30,0,0,0),new(Phase1TileGrade.Gray,"GRAY","Gray",1,20,30,40,0,0,0),new(Phase1TileGrade.Marble,"MARBLE","Marble",2,5,10,20,1,1,2)};
+            if(gradeDefinitions.Count!=4)gradeDefinitions=new List<Phase1TileGradeDefinition>{new(Phase1TileGrade.Beige,"BEIGE","Beige",0,20,10,5,0,0,0),new(Phase1TileGrade.Brown,"BROWN","Brown",2,30,25,15,0,0,0),new(Phase1TileGrade.Gray,"GRAY","Gray",4,25,30,35,0,0,0),new(Phase1TileGrade.Marble,"MARBLE","Marble",7,25,35,45,2,3,5)};
             if(gradeVisualSets.Count!=4){gradeVisualSets=new List<Phase1TileGradeVisualSet>();foreach(Phase1TileGrade g in System.Enum.GetValues(typeof(Phase1TileGrade)))gradeVisualSets.Add(new Phase1TileGradeVisualSet(g));}
             foreach(var set in gradeVisualSets)set.EnsureFallbackColor();
         }
@@ -76,10 +76,16 @@ namespace HATAGONG.Phase1
         }
         public bool ValidateGradeSettings(bool log=true)
         {
-            EnsureDefaults();bool ok=true;var enabled=gradeDefinitions.FindAll(x=>x.Enabled);ok&=enabled.Count>0;ok&=gradeDefinitions.Select(x=>x.GradeId).Distinct().Count()==gradeDefinitions.Count;ok&=gradeDefinitions.All(x=>x.HpModifier>=-2&&x.HpModifier<=2&&x.Weight(Phase1Difficulty.Easy)>=0&&x.Weight(Phase1Difficulty.Normal)>=0&&x.Weight(Phase1Difficulty.Hard)>=0&&x.MaxCount(Phase1Difficulty.Easy)>=0&&x.MaxCount(Phase1Difficulty.Normal)>=0&&x.MaxCount(Phase1Difficulty.Hard)>=0);ok&=enabled.Any(x=>x.Grade==defaultFallbackGrade);ok&=minimumFinalTileHp>=2&&gradeAssignmentAttempts>0;ok&=easyModifierMin<=easyModifierMax&&normalModifierMin<=normalModifierMax&&hardModifierMin<=hardModifierMax;ok&=gradeVisualSets.Select(x=>x.Grade).Distinct().Count()==gradeVisualSets.Count;
+            EnsureDefaults();bool ok=true;var enabled=gradeDefinitions.FindAll(x=>x.Enabled);ok&=enabled.Count>0;ok&=gradeDefinitions.Select(x=>x.GradeId).Distinct().Count()==gradeDefinitions.Count;ok&=gradeDefinitions.All(x=>x.HpModifier>=0&&x.HpModifier<=7&&x.Weight(Phase1Difficulty.Easy)>0&&x.Weight(Phase1Difficulty.Normal)>0&&x.Weight(Phase1Difficulty.Hard)>0&&x.MaxCount(Phase1Difficulty.Easy)>=0&&x.MaxCount(Phase1Difficulty.Normal)>=0&&x.MaxCount(Phase1Difficulty.Hard)>=0);ok&=enabled.Any(x=>x.Grade==defaultFallbackGrade);ok&=minimumFinalTileHp>=2&&gradeAssignmentAttempts>0;ok&=easyModifierMin==0&&easyModifierMax==30&&normalModifierMin==0&&normalModifierMax==41&&hardModifierMin==0&&hardModifierMax==55;ok&=gradeVisualSets.Select(x=>x.Grade).Distinct().Count()==gradeVisualSets.Count;
+            ok&=enabled.Sum(x=>x.Weight(Phase1Difficulty.Easy))==100&&enabled.Sum(x=>x.Weight(Phase1Difficulty.Normal))==100&&enabled.Sum(x=>x.Weight(Phase1Difficulty.Hard))==100;
+            ok&=GradeMatches(Phase1TileGrade.Beige,0,20,10,5,0,0,0)&&GradeMatches(Phase1TileGrade.Brown,2,30,25,15,0,0,0)&&GradeMatches(Phase1TileGrade.Gray,4,25,30,35,0,0,0)&&GradeMatches(Phase1TileGrade.Marble,7,25,35,45,2,3,5);
+            ok&=GetHp(Phase1Difficulty.Easy,Phase1TileShape.OneByTwo)==8&&GetHp(Phase1Difficulty.Easy,Phase1TileShape.OneByThree)==14&&GetHp(Phase1Difficulty.Easy,Phase1TileShape.TwoByTwo)==20&&GetHp(Phase1Difficulty.Easy,Phase1TileShape.TwoByThree)==28&&GetHp(Phase1Difficulty.Easy,Phase1TileShape.ThreeByThree)==36;
+            ok&=GetHp(Phase1Difficulty.Normal,Phase1TileShape.OneByOne)==22&&GetHp(Phase1Difficulty.Normal,Phase1TileShape.OneByTwo)==10&&GetHp(Phase1Difficulty.Normal,Phase1TileShape.OneByThree)==18&&GetHp(Phase1Difficulty.Normal,Phase1TileShape.TwoByTwo)==26&&GetHp(Phase1Difficulty.Normal,Phase1TileShape.TwoByThree)==34&&GetHp(Phase1Difficulty.Normal,Phase1TileShape.ThreeByThree)==40;
+            ok&=GetHp(Phase1Difficulty.Hard,Phase1TileShape.OneByOne)==28&&GetHp(Phase1Difficulty.Hard,Phase1TileShape.OneByTwo)==14&&GetHp(Phase1Difficulty.Hard,Phase1TileShape.OneByThree)==22&&GetHp(Phase1Difficulty.Hard,Phase1TileShape.TwoByTwo)==30&&GetHp(Phase1Difficulty.Hard,Phase1TileShape.TwoByThree)==40;
             foreach(Phase1Difficulty d in System.Enum.GetValues(typeof(Phase1Difficulty))){ok&=enabled.Sum(x=>x.Weight(d))>0;foreach(Phase1TileShape s in System.Enum.GetValues(typeof(Phase1TileShape))){int hp=GetHp(d,s);if(hp>0)ok&=enabled.Any(x=>hp+x.HpModifier>=minimumFinalTileHp);}}
             if(log)Debug.Log($"[Phase1][GradeConfig] grades={gradeDefinitions.Count}, visuals={gradeVisualSets.Count}, minimumFinalHp={minimumFinalTileHp}, valid={ok}");return ok;
         }
+        private bool GradeMatches(Phase1TileGrade grade,int modifier,int ew,int nw,int hw,int em,int nm,int hm){var value=gradeDefinitions.Find(x=>x.Grade==grade);return value!=null&&value.HpModifier==modifier&&value.Weight(Phase1Difficulty.Easy)==ew&&value.Weight(Phase1Difficulty.Normal)==nw&&value.Weight(Phase1Difficulty.Hard)==hw&&value.MaxCount(Phase1Difficulty.Easy)==em&&value.MaxCount(Phase1Difficulty.Normal)==nm&&value.MaxCount(Phase1Difficulty.Hard)==hm;}
         private void OnValidate(){ EnsureDefaults(); ValidateAllBags(false); }
     }
 }

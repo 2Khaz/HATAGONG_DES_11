@@ -51,7 +51,7 @@ MonoBehaviour:
     threeByThree: 1
     expectedTileCount: 5
     expectedArea: 25
-    expectedHp: 38
+    expectedHp: 112
   - id: EASY_B
     difficulty: 0
     oneByOne: 0
@@ -62,7 +62,7 @@ MonoBehaviour:
     threeByThree: 1
     expectedTileCount: 5
     expectedArea: 25
-    expectedHp: 39
+    expectedHp: 112
   - id: EASY_C
     difficulty: 0
     oneByOne: 0
@@ -73,7 +73,7 @@ MonoBehaviour:
     threeByThree: 0
     expectedTileCount: 6
     expectedArea: 25
-    expectedHp: 40
+    expectedHp: 118
   - id: EASY_D
     difficulty: 0
     oneByOne: 0
@@ -84,7 +84,7 @@ MonoBehaviour:
     threeByThree: 1
     expectedTileCount: 6
     expectedArea: 25
-    expectedHp: 38
+    expectedHp: 112
   - id: NORMAL_A
     difficulty: 1
     oneByOne: 2
@@ -95,7 +95,7 @@ MonoBehaviour:
     threeByThree: 0
     expectedTileCount: 8
     expectedArea: 25
-    expectedHp: 53
+    expectedHp: 184
   - id: NORMAL_B
     difficulty: 1
     oneByOne: 2
@@ -106,7 +106,7 @@ MonoBehaviour:
     threeByThree: 0
     expectedTileCount: 7
     expectedArea: 25
-    expectedHp: 53
+    expectedHp: 182
   - id: NORMAL_C
     difficulty: 1
     oneByOne: 2
@@ -117,7 +117,7 @@ MonoBehaviour:
     threeByThree: 1
     expectedTileCount: 7
     expectedArea: 25
-    expectedHp: 52
+    expectedHp: 172
   - id: NORMAL_D
     difficulty: 1
     oneByOne: 2
@@ -128,7 +128,7 @@ MonoBehaviour:
     threeByThree: 0
     expectedTileCount: 8
     expectedArea: 25
-    expectedHp: 49
+    expectedHp: 176
   - id: HARD_A
     difficulty: 2
     oneByOne: 3
@@ -139,7 +139,7 @@ MonoBehaviour:
     threeByThree: 0
     expectedTileCount: 10
     expectedArea: 25
-    expectedHp: 58
+    expectedHp: 240
   - id: HARD_B
     difficulty: 2
     oneByOne: 4
@@ -150,7 +150,7 @@ MonoBehaviour:
     threeByThree: 0
     expectedTileCount: 9
     expectedArea: 25
-    expectedHp: 65
+    expectedHp: 258
   - id: HARD_C
     difficulty: 2
     oneByOne: 3
@@ -161,7 +161,7 @@ MonoBehaviour:
     threeByThree: 0
     expectedTileCount: 10
     expectedArea: 25
-    expectedHp: 59
+    expectedHp: 240
   - id: HARD_D
     difficulty: 2
     oneByOne: 3
@@ -172,7 +172,7 @@ MonoBehaviour:
     threeByThree: 0
     expectedTileCount: 9
     expectedArea: 25
-    expectedHp: 62
+    expectedHp: 242
   visuals:
   - shape: 0
     normal: {fileID: 0}
@@ -208,10 +208,10 @@ MonoBehaviour:
   - grade: 0
     gradeId: BEIGE
     displayName: Beige
-    hpModifier: -1
-    easyWeight: 40
-    normalWeight: 20
-    hardWeight: 10
+    hpModifier: 0
+    easyWeight: 20
+    normalWeight: 10
+    hardWeight: 5
     easyMaxCount: 0
     normalMaxCount: 0
     hardMaxCount: 0
@@ -219,10 +219,10 @@ MonoBehaviour:
   - grade: 1
     gradeId: BROWN
     displayName: Brown
-    hpModifier: 0
-    easyWeight: 35
-    normalWeight: 40
-    hardWeight: 30
+    hpModifier: 2
+    easyWeight: 30
+    normalWeight: 25
+    hardWeight: 15
     easyMaxCount: 0
     normalMaxCount: 0
     hardMaxCount: 0
@@ -230,10 +230,10 @@ MonoBehaviour:
   - grade: 2
     gradeId: GRAY
     displayName: Gray
-    hpModifier: 1
-    easyWeight: 20
+    hpModifier: 4
+    easyWeight: 25
     normalWeight: 30
-    hardWeight: 40
+    hardWeight: 35
     easyMaxCount: 0
     normalMaxCount: 0
     hardMaxCount: 0
@@ -241,13 +241,13 @@ MonoBehaviour:
   - grade: 3
     gradeId: MARBLE
     displayName: Marble
-    hpModifier: 2
-    easyWeight: 5
-    normalWeight: 10
-    hardWeight: 20
-    easyMaxCount: 1
-    normalMaxCount: 1
-    hardMaxCount: 2
+    hpModifier: 7
+    easyWeight: 25
+    normalWeight: 35
+    hardWeight: 45
+    easyMaxCount: 2
+    normalMaxCount: 3
+    hardMaxCount: 5
     enabled: 1
   gradeVisualSets:
   - grade: 0
@@ -341,9 +341,9 @@ MonoBehaviour:
   minimumFinalTileHp: 2
   gradeAssignmentAttempts: 20
   defaultFallbackGrade: 1
-  easyModifierMin: -2
-  easyModifierMax: 1
-  normalModifierMin: -1
-  normalModifierMax: 2
+  easyModifierMin: 0
+  easyModifierMax: 30
+  normalModifierMin: 0
+  normalModifierMax: 41
   hardModifierMin: 0
-  hardModifierMax: 4
+  hardModifierMax: 55
