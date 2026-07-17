@@ -5,6 +5,9 @@ namespace HATAGONG.Phase3Tangram
 {
     public sealed class Phase3TangramGuide
     {
+        public static readonly Color GuideColor = Color.white;
+        public const int GuideSortingOrder = 4900;
+
         private readonly Transform root;
         private readonly Material material;
         private readonly List<LineRenderer> lines = new List<LineRenderer>();
@@ -14,7 +17,7 @@ namespace HATAGONG.Phase3Tangram
             var rootObject = new GameObject("Phase3 Tangram Closed Guides");
             root = rootObject.transform;
             root.SetParent(parent, false);
-            material = new Material(Shader.Find("Sprites/Default")) { color = new Color(0.35f, 0.88f, 1f, 0.95f) };
+            material = new Material(Shader.Find("Sprites/Default")) { color = GuideColor };
         }
 
         public int PolygonCount => lines.Count;
@@ -36,7 +39,7 @@ namespace HATAGONG.Phase3Tangram
                 line.widthMultiplier = manager.GuideWorldWidth;
                 line.numCapVertices = 2;
                 line.numCornerVertices = 2;
-                line.sortingOrder = 4900;
+                line.sortingOrder = GuideSortingOrder;
                 line.positionCount = target.AbsolutePolygon.Count;
                 for (int vertex = 0; vertex < target.AbsolutePolygon.Count; vertex++)
                 {

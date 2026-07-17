@@ -212,6 +212,9 @@ MonoBehaviour:
     easyWeight: 20
     normalWeight: 10
     hardWeight: 5
+    easyMinCount: 1
+    normalMinCount: 1
+    hardMinCount: 1
     easyMaxCount: 0
     normalMaxCount: 0
     hardMaxCount: 0
@@ -223,6 +226,9 @@ MonoBehaviour:
     easyWeight: 30
     normalWeight: 25
     hardWeight: 15
+    easyMinCount: 1
+    normalMinCount: 1
+    hardMinCount: 1
     easyMaxCount: 0
     normalMaxCount: 0
     hardMaxCount: 0
@@ -234,6 +240,9 @@ MonoBehaviour:
     easyWeight: 25
     normalWeight: 30
     hardWeight: 35
+    easyMinCount: 1
+    normalMinCount: 1
+    hardMinCount: 1
     easyMaxCount: 0
     normalMaxCount: 0
     hardMaxCount: 0
@@ -245,6 +254,9 @@ MonoBehaviour:
     easyWeight: 25
     normalWeight: 35
     hardWeight: 45
+    easyMinCount: 1
+    normalMinCount: 2
+    hardMinCount: 3
     easyMaxCount: 2
     normalMaxCount: 3
     hardMaxCount: 5

@@ -75,6 +75,8 @@ namespace HATAGONG.GameFlowEditor
             Sprite phaseOff = AssetDatabase.LoadAssetAtPath<Sprite>(PhaseOffPath);
             Sprite itemButton = AssetDatabase.LoadAssetAtPath<Sprite>(ItemButtonPath);
             Sprite optionButton = AssetDatabase.LoadAssetAtPath<Sprite>(OptionButtonPath);
+            if (!hakgyo || !jua || !phaseOn || !phaseOff || !itemButton || !optionButton)
+                throw new System.InvalidOperationException("Required INGAME HUD Font/Sprite asset is missing; no references were changed.");
 
             differences += Text("Canvas/Game_UI_General/Top_HUD/Score_Content/Score_Title", hakgyo, "점 수", 80f, false, apply, new Vector2(0f, -82f));
             differences += Text("Canvas/Game_UI_General/Top_HUD/Time_Content/Time_Title", hakgyo, "시  간", 80f, false, apply, new Vector2(0f, -82f));

@@ -9,6 +9,7 @@ namespace HATAGONG.Outgame
         {
             if (offer == null) throw new ArgumentNullException(nameof(offer));
 
+            OfferSnapshot = offer;
             OutgameRequestDefinition definition = offer.Definition;
             RequestId = definition.RequestId;
             Difficulty = definition.Difficulty;
@@ -19,6 +20,7 @@ namespace HATAGONG.Outgame
             Phase3Seed = offer.Phase3Seed;
         }
 
+        public OutgameRequestOffer OfferSnapshot { get; }
         public string RequestId { get; }
         public GameDifficulty Difficulty { get; }
         public RequestType RequestType { get; }

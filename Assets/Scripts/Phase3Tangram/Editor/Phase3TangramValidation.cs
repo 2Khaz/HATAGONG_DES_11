@@ -11,6 +11,14 @@ namespace HATAGONG.Phase3Tangram.Editor
         [MenuItem("Tools/HATAGONG/Phase 3 Tangram/Validate Antigravity Contracts")]
         public static void Validate()
         {
+            Require(Phase3TangramGuide.GuideColor == Color.white, "Partition guide color must be opaque white.");
+            Require(Phase3TangramGuide.GuideSortingOrder < 10000, "Partition guides must render below GamePanelCase.");
+            Require(Phase3TangramPiece.PlacedSortingOrderBase < 10000, "Placed pieces must render below GamePanelCase.");
+            Require(Phase3TangramPiece.FinalPieceDraggingSortingOrder < 10000, "The final dragging piece must remain below GamePanelCase.");
+            Require(Phase3TangramGuide.GuideSortingOrder < Phase3TangramManager.CompletionShineSortingOrder, "Completion shine must render above partition guides.");
+            Require(Phase3TangramManager.CompletionShineSortingOrder < 10000, "Completion shine must render below GamePanelCase.");
+            Require(Phase3TangramPiece.DeckSortingOrderBase > 20000, "Deck pieces must render above DeckPanel.");
+            Require(Phase3TangramPiece.DraggingSortingOrder > Phase3TangramPiece.DeckSortingOrderBase, "Dragging pieces must remain above the Deck foreground.");
             Require(Phase3TangramGenerator.PieceCount(GameDifficulty.Easy) == 7, "Easy piece count must be 7.");
             Require(Phase3TangramGenerator.PieceCount(GameDifficulty.Normal) == 9, "Normal piece count must be 9.");
             Require(Phase3TangramGenerator.PieceCount(GameDifficulty.Hard) == 11, "Hard piece count must be 11.");

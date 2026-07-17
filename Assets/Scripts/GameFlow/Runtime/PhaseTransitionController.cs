@@ -13,6 +13,16 @@ namespace HATAGONG.GameFlow
         public Exception LastError { get; private set; }
         public float ConfiguredDuration => overlay ? overlay.TotalConfiguredDuration : 0f;
 
+        public bool ShowGameCompleted(GameCompletionSummary summary, Func<bool> lobbyRequested)
+        {
+            return !IsTransitioning && overlay && overlay.ShowGameCompleted(summary, lobbyRequested);
+        }
+
+        public bool ShowGameDefeated(Func<bool> retryRequested, Func<bool> lobbyRequested)
+        {
+            return !IsTransitioning && overlay && overlay.ShowGameDefeated(retryRequested, lobbyRequested);
+        }
+
         public bool PlayPreparedTransition(
             GamePhaseId cleared,
             GamePhaseId next,

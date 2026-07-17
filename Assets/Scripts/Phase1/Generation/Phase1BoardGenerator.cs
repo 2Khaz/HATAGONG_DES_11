@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace HATAGONG.Phase1
 {
@@ -8,18 +10,42 @@ namespace HATAGONG.Phase1
     {
         private sealed class Spec { public Phase1TileShape Shape; public int Area; public int Id; }
         private readonly Phase1GameConfig config;
+        private readonly Dictionary<Phase1TileGrade,int> lastFallbackGrades=new();
         public Phase1BoardGenerator(Phase1GameConfig config){this.config=config;}
+        public int LastGradeFallbackCount { get; private set; }
+        public IReadOnlyDictionary<Phase1TileGrade,int> LastGradeFallbackGrades=>lastFallbackGrades;
+        public Phase1GradeDispersionScore LastPreOptimizationScore { get; private set; }
+        public Phase1GradeDispersionScore LastGradeDispersionScore { get; private set; }
         public static int ShapeArea(Phase1TileShape s)=>s switch{Phase1TileShape.OneByOne=>1,Phase1TileShape.OneByTwo=>2,Phase1TileShape.OneByThree=>3,Phase1TileShape.TwoByTwo=>4,Phase1TileShape.TwoByThree=>6,Phase1TileShape.ThreeByThree=>9,_=>0};
         public static Phase1TileRole Role(Phase1TileShape s)=>s switch{Phase1TileShape.OneByOne=>Phase1TileRole.Core,Phase1TileShape.OneByTwo=>Phase1TileRole.Pop,Phase1TileShape.TwoByThree or Phase1TileShape.ThreeByThree=>Phase1TileRole.Anchor,_=>Phase1TileRole.Standard};
         public bool TryGenerate(Phase1Difficulty difficulty,Phase1TileBagDefinition bag,int seed,bool prioritize,out Phase1BoardState state)
         {
-            state=null; var random=new Random(seed); var specs=new List<Spec>();int id=0;
+            LastGradeFallbackCount=0;lastFallbackGrades.Clear();LastPreOptimizationScore=default;LastGradeDispersionScore=default;
+            if(!TryGenerateGeometry(difficulty,bag,seed,prioritize,out state))return false;
+            var assigner=new Phase1GradeAssigner(config);
+            var gradeRandom=new Random(DeriveGradeSeed(seed,bag.Id,difficulty));
+            if(!assigner.TryAssign(difficulty,state.Tiles,gradeRandom,out _)){state=null;return false;}
+            LastGradeFallbackCount=assigner.LastFallbackCount;
+            foreach(var pair in assigner.LastFallbackGrades)lastFallbackGrades[pair.Key]=pair.Value;
+            LastPreOptimizationScore=assigner.LastPreOptimizationScore;
+            LastGradeDispersionScore=assigner.LastDispersionScore;
+            state.VariantHash=Phase1VariantHash.Compute(state);return true;
+        }
+        public bool TryGenerateGeometry(Phase1Difficulty difficulty,Phase1TileBagDefinition bag,int seed,bool prioritize,out Phase1BoardState state)
+        {
+            state=null;var random=new Random(seed);var specs=new List<Spec>();int id=0;
             foreach(Phase1TileShape s in Enum.GetValues(typeof(Phase1TileShape))) for(int i=0;i<bag.Count(s);i++) specs.Add(new Spec{Shape=s,Area=ShapeArea(s),Id=id++});
             specs=specs.OrderByDescending(x=>x.Area).ThenBy(_=>random.Next()).ToList(); var placed=new List<Phase1TilePlacement>();var occupied=new bool[config.BoardSize,config.BoardSize];
             if(!Place(0,specs,placed,occupied,difficulty,random,prioritize))return false;
             if(!Phase1PlacementValidator.ValidateFinal(placed,config.BoardSize,out _))return false;
             state=new Phase1BoardState{Difficulty=difficulty,BagId=bag.Id,Seed=seed};state.Tiles.AddRange(placed.OrderBy(x=>x.TileId));state.LayoutHash=Phase1LayoutHash.Compute(difficulty,bag.Id,state.Tiles);
-            if(!new Phase1GradeAssigner(config).TryAssign(difficulty,state.Tiles,random,out _)){state=null;return false;}state.VariantHash=Phase1VariantHash.Compute(state);return true;
+            return true;
+        }
+        public static int DeriveGradeSeed(int boardSeed,string bagId,Phase1Difficulty difficulty)
+        {
+            string value=boardSeed+"|"+bagId+"|"+(int)difficulty+"|PHASE1_GRADE";
+            using var sha=SHA256.Create();byte[] hash=sha.ComputeHash(Encoding.UTF8.GetBytes(value));
+            int result=((hash[0]&0x7f)<<24)|(hash[1]<<16)|(hash[2]<<8)|hash[3];return result==0?1:result;
         }
         private bool Place(int index,List<Spec> specs,List<Phase1TilePlacement> placed,bool[,] occupied,Phase1Difficulty difficulty,Random random,bool prioritize)
         {

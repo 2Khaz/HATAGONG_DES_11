@@ -23,6 +23,12 @@ namespace HATAGONG.Phase3Tangram
     [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer), typeof(PolygonCollider2D))]
     public sealed class Phase3TangramPiece : MonoBehaviour
     {
+        public const int PlacedSortingOrderBase = 4000;
+        public const int DefaultFieldSortingOrderBase = 5000;
+        public const int FinalPieceDraggingSortingOrder = 9000;
+        public const int DeckSortingOrderBase = 25000;
+        public const int DraggingSortingOrder = 32000;
+
         private Mesh mesh;
         private Material material;
         private MeshRenderer meshRenderer;
@@ -57,7 +63,7 @@ namespace HATAGONG.Phase3Tangram
             polygonCollider = GetComponent<PolygonCollider2D>();
             material = new Material(Shader.Find("Sprites/Default")) { color = color };
             meshRenderer.sharedMaterial = material;
-            meshRenderer.sortingOrder = 5000 + id;
+            meshRenderer.sortingOrder = DeckSortingOrderBase + id;
             GenerateMeshAndCollider();
             SetRotationStep(initialRotationStep);
         }
@@ -111,8 +117,9 @@ namespace HATAGONG.Phase3Tangram
             State = state;
             polygonCollider.enabled = state != TangramPieceState.Placed;
             if (material) material.renderQueue = state == TangramPieceState.Dragging ? 5000 : 3000;
-            if (state == TangramPieceState.Dragging) meshRenderer.sortingOrder = 32000;
-            else meshRenderer.sortingOrder = 5000 + Id;
+            if (state == TangramPieceState.Dragging) meshRenderer.sortingOrder = DraggingSortingOrder;
+            else if (state == TangramPieceState.InDeck) meshRenderer.sortingOrder = DeckSortingOrderBase + Id;
+            else meshRenderer.sortingOrder = DefaultFieldSortingOrderBase + Id;
         }
 
         public void SetRotationStep(int step)

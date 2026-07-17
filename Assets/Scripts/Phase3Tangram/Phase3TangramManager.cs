@@ -23,6 +23,7 @@ namespace HATAGONG.Phase3Tangram
         [SerializeField] private EventSystem eventSystem;
         [SerializeField] private Camera worldCamera;
         [SerializeField] private GameScoreController scoreController;
+        [SerializeField] private Image phaseBackground;
         [SerializeField] private RectTransform deckHost;
         [SerializeField] private Image deckPanel;
         [SerializeField] private Sprite deckSprite;
@@ -77,6 +78,7 @@ namespace HATAGONG.Phase3Tangram
 
         private const float CompletionShineDuration = 0.75f;
         private const float CompletionShineWidth = 0.22f;
+        public const int CompletionShineSortingOrder = 9000;
 
         public GamePhaseId PhaseId => GamePhaseId.Phase3;
         public bool IsPrepared { get; private set; }
@@ -97,9 +99,10 @@ namespace HATAGONG.Phase3Tangram
         {
             if (IsCleared && terminalClearCommitted && !IsExitReady) FinishCompletionPresentation();
             SetInputEnabled(false);
+            if (phaseBackground) phaseBackground.gameObject.SetActive(false);
             IsPrepared = IsRunning = IsCleared = IsExitReady = false;
             terminalClearCommitted = false;
-            if (!context.IsValid || !canvas || !graphicRaycaster || !eventSystem || !worldCamera || !scoreController || !deckHost || !deckPanel || !deckSprite || !EnsureDeckFrames()) return false;
+            if (!context.IsValid || !canvas || !graphicRaycaster || !eventSystem || !worldCamera || !scoreController || !phaseBackground || !deckHost || !deckPanel || !deckSprite || !EnsureDeckFrames()) return false;
             try
             {
                 EnsureBuilt();
@@ -198,6 +201,7 @@ namespace HATAGONG.Phase3Tangram
             draggingPiece.transform.position -= worldCamera.transform.forward * DragDisplayOffset;
             draggingPiece.DragOffset = draggingPiece.transform.position - pointer;
             draggingPiece.SetState(TangramPieceState.Dragging);
+            if (IsFinalUnplacedPiece(draggingPiece)) draggingPiece.SetSortingOrder(Phase3TangramPiece.FinalPieceDraggingSortingOrder);
             DragSelected(screenPosition);
         }
 
@@ -245,6 +249,9 @@ namespace HATAGONG.Phase3Tangram
             field = CreateRect("Phase3 Tangram Field", transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1250f, 1250f));
             AddInputSurface(CreateStretch("Tangram Field Input", field));
             RectTransform completionRoot = CreateStretch("Tangram Completion Root", field);
+            Canvas completionCanvas = completionRoot.gameObject.AddComponent<Canvas>();
+            completionCanvas.overrideSorting = true;
+            completionCanvas.sortingOrder = CompletionShineSortingOrder;
             RectTransform completion = CreateStretch("Tangram Completion Image", completionRoot);
             completionImage = completion.gameObject.AddComponent<Image>();
             completionImage.sprite = completionSprite;
@@ -412,7 +419,7 @@ namespace HATAGONG.Phase3Tangram
                 }
 
                 dragged.SetState(TangramPieceState.Placed);
-                dragged.SetSortingOrder(4000 + dragged.Id);
+                dragged.SetSortingOrder(Phase3TangramPiece.PlacedSortingOrderBase + dragged.Id);
                 scoreController.AddScore(200, GamePhaseId.Phase3, ScoreReason.Other);
                 CheckCompletion();
                 return true;
@@ -432,6 +439,7 @@ namespace HATAGONG.Phase3Tangram
             guide.SetVisible(false);
             for (int i = 0; i < pieces.Count; i++) pieces[i].SetVisible(false);
             completionImage.transform.parent.gameObject.SetActive(true);
+            Debug.Log($"[Phase3Tangram][Completion] committed=true,pieces={pieces.Count},completionCanvasOrder={CompletionShineSortingOrder}", this);
             scoreController.AddScore(1000, GamePhaseId.Phase3, ScoreReason.Other);
             PhaseCleared?.Invoke();
             StartCompletionPresentation();
@@ -441,14 +449,18 @@ namespace HATAGONG.Phase3Tangram
         {
             if (IsExitReady) return;
             StopCompletionShine();
-            if (!isActiveAndEnabled || !completionShineImage || !completionSprite || !completionShineRuntimeMaterial || !completionShineRuntimeMaterial.shader || !completionShineRuntimeMaterial.shader.isSupported)
+            if (!isActiveAndEnabled || !completionShineImage || !completionSprite)
             {
                 FinishCompletionPresentation();
                 return;
             }
             try
             {
-                completionShineRuntimeMaterial.SetFloat("_Progress", -CompletionShineWidth);
+                bool materialReady = completionShineRuntimeMaterial && completionShineRuntimeMaterial.shader && completionShineRuntimeMaterial.shader.isSupported;
+                completionShineImage.material = materialReady ? completionShineRuntimeMaterial : null;
+                if (materialReady) completionShineRuntimeMaterial.SetFloat("_Progress", -CompletionShineWidth);
+                else Debug.LogWarning("[Phase3Tangram] Completion shine material unavailable; using the built-in pulse fallback.", this);
+                Debug.Log($"[Phase3Tangram][Completion] shineStarted=true,mode={(materialReady ? "shader" : "fallback")},duration={CompletionShineDuration:F2}", this);
                 completionShineAnimation = StartCoroutine(CompletionShineRoutine());
                 if (completionShineAnimation == null) FinishCompletionPresentation();
             }
@@ -469,7 +481,16 @@ namespace HATAGONG.Phase3Tangram
                 {
                     elapsed += Time.unscaledDeltaTime;
                     float normalized = Mathf.Clamp01(elapsed / CompletionShineDuration);
-                    completionShineRuntimeMaterial.SetFloat("_Progress", Mathf.Lerp(-CompletionShineWidth, 2f + CompletionShineWidth, normalized));
+                    if (completionShineImage.material == completionShineRuntimeMaterial && completionShineRuntimeMaterial)
+                    {
+                        completionShineImage.color = Color.white;
+                        completionShineRuntimeMaterial.SetFloat("_Progress", Mathf.Lerp(-CompletionShineWidth, 2f + CompletionShineWidth, normalized));
+                    }
+                    else
+                    {
+                        float alpha = Mathf.Sin(normalized * Mathf.PI) * 0.65f;
+                        completionShineImage.color = new Color(1f, 1f, 1f, alpha);
+                    }
                     yield return null;
                 }
             }
@@ -488,6 +509,7 @@ namespace HATAGONG.Phase3Tangram
             try
             {
                 StopCompletionShine();
+                Debug.Log("[Phase3Tangram][Completion] shineFinished=true,raisingExitReady=true", this);
                 RaiseExitReady();
             }
             finally
@@ -503,7 +525,11 @@ namespace HATAGONG.Phase3Tangram
                 StopCoroutine(completionShineAnimation);
                 completionShineAnimation = null;
             }
-            if (completionShineImage) completionShineImage.gameObject.SetActive(false);
+            if (completionShineImage)
+            {
+                completionShineImage.color = Color.white;
+                completionShineImage.gameObject.SetActive(false);
+            }
         }
 
         private void RaiseExitReady()
@@ -511,6 +537,17 @@ namespace HATAGONG.Phase3Tangram
             if (IsExitReady) return;
             IsExitReady = true;
             PhaseExitReady?.Invoke();
+        }
+
+        private bool IsFinalUnplacedPiece(Phase3TangramPiece candidate)
+        {
+            if (!candidate || candidate.IsPlaced) return false;
+            for (int i = 0; i < pieces.Count; i++)
+            {
+                Phase3TangramPiece piece = pieces[i];
+                if (piece && piece != candidate && !piece.IsPlaced) return false;
+            }
+            return true;
         }
 
         private Vector3 ClampInsideField(Phase3TangramPiece piece)
@@ -603,6 +640,7 @@ namespace HATAGONG.Phase3Tangram
 
         private void SetRuntimeVisible(bool value)
         {
+            if (phaseBackground) phaseBackground.gameObject.SetActive(value);
             if (field) field.gameObject.SetActive(value);
             if (deck) deck.gameObject.SetActive(value);
             if (worldRoot) worldRoot.gameObject.SetActive(value);

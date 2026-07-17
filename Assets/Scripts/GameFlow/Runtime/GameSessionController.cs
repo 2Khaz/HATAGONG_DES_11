@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using HATAGONG.Outgame;
+using HATAGONG.Phase3;
 using HATAGONG.Phase3Tangram;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace HATAGONG.GameFlow
 {
@@ -43,6 +45,7 @@ namespace HATAGONG.GameFlow
         private string _contextInitializationError;
         private IGamePhase _pendingNextPhase;
         private double _transitionStartedAt;
+        private bool _resultSceneLoadRequested;
 
         public GameSessionState CurrentState => _model.CurrentState;
         public bool CanAcceptGameplayInput => _model.CanAcceptGameplayInput;
@@ -53,6 +56,7 @@ namespace HATAGONG.GameFlow
         public GameRunContext RunContext => _runContext;
         public IGamePhase CurrentPhase => _phaseTransaction?.CurrentPhase;
         public double LastTransitionElapsedSeconds { get; private set; }
+        public int ResultSceneLoadRequestCount { get; private set; }
 
         public event Action<GameSessionState> SessionStateChanged { add => _model.SessionStateChanged += value; remove => _model.SessionStateChanged -= value; }
         public event Action GameExpired { add => _model.GameExpired += value; remove => _model.GameExpired -= value; }
@@ -62,7 +66,12 @@ namespace HATAGONG.GameFlow
         {
             if (!TryCreateRunContext(out GameRunContext runContext, out _contextInitializationError)) return;
             _runContext = runContext;
-            if (_runContext.HasSelectedRequest) OutgameRequestSelectionStore.Clear();
+            if (_runContext.HasSelectedRequest && !OutgameRequestSelectionStore.ActivatePending())
+            {
+                _contextInitializationError = "Pending request selection could not become the active retry snapshot.";
+                _runContext = default;
+                return;
+            }
             GameRequestContext requestContext = GetComponent<GameRequestContext>();
             if (requestContext) requestContext.SetRequest(_runContext.RequestType);
         }
@@ -161,10 +170,19 @@ namespace HATAGONG.GameFlow
 
         private void OnTimerExpired()
         {
-            if (_terminalPhaseClearGate.ShouldIgnoreTimerExpiration) return;
-            if (!_model.SetState(GameSessionState.Expired)) return;
+            TryCommitTerminalDefeat();
+        }
+
+        public bool TryCommitTerminalDefeat()
+        {
+            if (_terminalPhaseClearGate.ShouldIgnoreTimerExpiration || !_model.SetState(GameSessionState.Expired)) return false;
+            timer?.StopTimer();
+            _registry?.DisableAllInput();
             _phaseTransaction?.SetCurrentInputEnabled(false);
-            score.LockScore();
+            score?.LockScore();
+            if (!transition || !transition.ShowGameDefeated(RestartSameRequest, ReturnToOutgameLobby))
+                Debug.LogError("[GameFlow][Defeat] Result overlay could not be shown. Session remains Expired with all gameplay locked.", this);
+            return true;
         }
 
         public bool RetryPendingTransition()
@@ -183,12 +201,74 @@ namespace HATAGONG.GameFlow
             _phaseTransaction?.SetCurrentInputEnabled(false);
             timer.StopTimer();
             score.LockScore();
+            var summary = new GameCompletionSummary(
+                timer.DisplayedSeconds,
+                acquiredScore: Phase3ScoreRules.PhaseClearScore,
+                finalScore: score.CurrentScore);
+            if (!transition.ShowGameCompleted(summary, ReturnToOutgameLobbyAfterSuccess))
+                Debug.LogError("[GameFlow][Completion] Result overlay could not be shown. Session remains Completed.", this);
         }
 
         public bool TryCommitTerminalPhaseClear(GamePhaseId phaseId)
         {
             GamePhaseId currentPhaseId = CurrentPhase != null ? CurrentPhase.PhaseId : default;
             return _terminalPhaseClearGate.TryCommit(_model.CurrentState, phaseId, currentPhaseId, timer ? timer.StopTimer : null);
+        }
+
+        private bool RestartSameRequest()
+        {
+            const string sceneName = "INGAME";
+            if (_resultSceneLoadRequested || !_model.IsExpired || !_runContext.IsValid ||
+                !Application.CanStreamedLevelBeLoaded(sceneName)) return false;
+            if (!OutgameRequestSelectionStore.TryPrepareRetry(_runContext))
+            {
+                Debug.LogError("[GameFlow][Defeat] Active request snapshot no longer matches the running context.", this);
+                return false;
+            }
+
+            bool started = TryLoadResultScene(sceneName, "Defeat");
+            if (!started) OutgameRequestSelectionStore.CancelPreparedRetry(_runContext);
+            return started;
+        }
+
+        private bool ReturnToOutgameLobby()
+        {
+            const string sceneName = "OUTGAME_LOBBY";
+            if (_resultSceneLoadRequested || !_model.IsExpired || !Application.CanStreamedLevelBeLoaded(sceneName)) return false;
+            if (!TryLoadResultScene(sceneName, "Defeat")) return false;
+            OutgameRequestSelectionStore.Clear();
+            return true;
+        }
+
+        private bool ReturnToOutgameLobbyAfterSuccess()
+        {
+            const string sceneName = "OUTGAME_LOBBY";
+            if (_resultSceneLoadRequested || !_model.IsCompleted || !Application.CanStreamedLevelBeLoaded(sceneName)) return false;
+            if (!TryLoadResultScene(sceneName, "Completion")) return false;
+            OutgameRequestSelectionStore.Clear();
+            return true;
+        }
+
+        private bool TryLoadResultScene(string sceneName, string resultKind)
+        {
+            if (_resultSceneLoadRequested) return false;
+            _resultSceneLoadRequested = true;
+            ResultSceneLoadRequestCount++;
+            try
+            {
+                AsyncOperation operation = SceneManager.LoadSceneAsync(sceneName, LoadSceneMode.Single);
+                if (operation != null)
+                {
+                    Debug.Log($"[GameFlow][{resultKind}] Loading scene once: {sceneName}.", this);
+                    return true;
+                }
+                Debug.LogError($"[GameFlow][{resultKind}] LoadSceneAsync returned null: {sceneName}.", this);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError($"[GameFlow][{resultKind}] LoadSceneAsync failed once for {sceneName}: {exception}", this);
+            }
+            return false;
         }
 
         private void SubscribePhaseExitReady()

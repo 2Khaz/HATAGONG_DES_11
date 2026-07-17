@@ -56,6 +56,19 @@ namespace HATAGONG.Outgame.Editor
             validation.Check(!new GameRunContext("X", GameDifficulty.Normal, RequestType.Normal, 1, 2, 0, 4).IsValid, "Invalid Phase2Seed fails closed");
             validation.Check(!new GameRunContext("X", GameDifficulty.Normal, RequestType.Normal, 1, 2, 3, 0).IsValid, "Invalid Phase3Seed fails closed");
 
+            OutgameRequestOffer retryOffer = CreateOffer(GameDifficulty.Normal, RequestType.Sudden, 715001);
+            var retryContext = new GameRunContext(retryOffer.Definition.RequestId, retryOffer.Definition.Difficulty,
+                retryOffer.Definition.RequestType, retryOffer.Definition.PermanentSeed,
+                retryOffer.Phase1Seed, retryOffer.Phase2Seed, retryOffer.Phase3Seed);
+            OutgameRequestSelectionStore.SetPending(retryOffer);
+            validation.Check(OutgameRequestSelectionStore.ActivatePending() && OutgameRequestSelectionStore.HasActive,
+                "Selected offer becomes active retry snapshot");
+            validation.Check(OutgameRequestSelectionStore.TryPrepareRetry(retryContext) && OutgameRequestSelectionStore.HasPending,
+                "Retry restores the identical active selection to Pending");
+            validation.Check(OutgameRequestSelectionStore.TryGetPending(out OutgameRequestRunSelection retrySelection) &&
+                ReferenceEquals(retrySelection.OfferSnapshot, retryOffer), "Retry preserves the exact offer snapshot object");
+            OutgameRequestSelectionStore.Clear();
+
             foreach (GameDifficulty difficulty in new[] { GameDifficulty.Easy, GameDifficulty.Normal, GameDifficulty.Hard })
             {
                 TangramGenerationResult first = Phase3TangramGenerator.Generate(difficulty, 710031);
