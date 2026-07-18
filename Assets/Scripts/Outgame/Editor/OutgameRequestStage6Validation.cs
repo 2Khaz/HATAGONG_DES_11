@@ -108,7 +108,7 @@ namespace HATAGONG.Outgame.Editor
             string[] propertyNames =
             {
                 "RequestId", "Difficulty", "RequestType", "PermanentSeed",
-                "Phase1Seed", "Phase2Seed", "Phase3Seed"
+                "Phase1Seed", "Phase3Seed", "Phase3ImageKey"
             };
             foreach (string propertyName in propertyNames)
             {
@@ -195,7 +195,7 @@ namespace HATAGONG.Outgame.Editor
                 Vector2 cardSize = carousel.CardDisplaySize;
                 float widthRatio = cardSize.x / carousel.Viewport.rect.width;
                 validation.Check(widthRatio >= 0.88f && widthRatio <= 0.92f, "Card width is 88-92 percent of Viewport");
-                validation.Check(Mathf.Abs((cardSize.y / cardSize.x) - (1442f / 1038f)) <= 0.001f, "Card preserves base.png aspect ratio");
+                validation.Check(Mathf.Abs((cardSize.y / cardSize.x) - (1512f / 1015f)) <= 0.001f, "Card preserves Img_questui aspect ratio");
                 validation.Check(popup.Cards.All(value => Vector2.Distance(value.DisplaySize, cardSize) <= 0.1f), "All three cards have identical display size");
                 validation.Check(popup.Cards.All(value => value.GetComponentsInChildren<Transform>(true).All(transform => transform.localScale == Vector3.one)), "Every card Transform scale is one");
                 validation.Check(Mathf.Abs(carousel.Content.rect.width - (carousel.Viewport.rect.width * 3f)) <= 0.1f, "Content width equals three Viewport pages");
@@ -403,9 +403,11 @@ namespace HATAGONG.Outgame.Editor
             RectTransform effects = card.transform.Find("EffectSlots") as RectTransform;
             RectTransform perform = card.transform.Find("PerformButton") as RectTransform;
             TextMeshProUGUI title = card.transform.Find("TitleLabel").GetComponent<TextMeshProUGUI>();
-            return effects != null && effects.rect.width >= 1100f &&
-                perform != null && perform.rect.width >= 700f &&
-                title != null && title.fontSize >= 60f;
+            float cardWidth = card.DisplaySize.x;
+            float layoutScale = cardWidth / 390f;
+            return effects != null && effects.rect.width >= cardWidth * 0.84f &&
+                perform != null && perform.rect.width >= cardWidth * 0.63f &&
+                title != null && title.fontSize >= 19f * layoutScale;
         }
 
         private static bool SelectionMatchesOffer(OutgameRequestRunSelection selection, OutgameRequestOffer offer)
@@ -416,8 +418,8 @@ namespace HATAGONG.Outgame.Editor
                 selection.RequestType == offer.Definition.RequestType &&
                 selection.PermanentSeed == offer.Definition.PermanentSeed &&
                 selection.Phase1Seed == offer.Phase1Seed &&
-                selection.Phase2Seed == offer.Phase2Seed &&
-                selection.Phase3Seed == offer.Phase3Seed;
+                selection.Phase3Seed == offer.Phase3Seed &&
+                selection.Phase3ImageKey == offer.Phase3ImageKey;
         }
 
         private static bool ContextMatchesSelection(GameRunContext context, OutgameRequestRunSelection selection)
@@ -425,8 +427,8 @@ namespace HATAGONG.Outgame.Editor
             return selection != null && context.IsValid && context.HasSelectedRequest &&
                 context.RequestId == selection.RequestId && context.Difficulty == selection.Difficulty &&
                 context.RequestType == selection.RequestType && context.PermanentSeed == selection.PermanentSeed &&
-                context.Phase1Seed == selection.Phase1Seed && context.Phase2Seed == selection.Phase2Seed &&
-                context.Phase3Seed == selection.Phase3Seed;
+                context.Phase1Seed == selection.Phase1Seed && context.Phase3Seed == selection.Phase3Seed &&
+                context.Phase3ImageKey == selection.Phase3ImageKey;
         }
 
         private static bool SelectionsEqual(IReadOnlyList<OutgameRequestRunSelection> values)
@@ -436,8 +438,8 @@ namespace HATAGONG.Outgame.Editor
             return values.All(value => value != null &&
                 value.RequestId == first.RequestId && value.Difficulty == first.Difficulty &&
                 value.RequestType == first.RequestType && value.PermanentSeed == first.PermanentSeed &&
-                value.Phase1Seed == first.Phase1Seed && value.Phase2Seed == first.Phase2Seed &&
-                value.Phase3Seed == first.Phase3Seed);
+                value.Phase1Seed == first.Phase1Seed && value.Phase3Seed == first.Phase3Seed &&
+                value.Phase3ImageKey == first.Phase3ImageKey);
         }
 
         private static OutgameRequestOffer CreateOfferFixture()
@@ -449,6 +451,7 @@ namespace HATAGONG.Outgame.Editor
         {
             var definition = new OutgameRequestDefinition(
                 "STAGE6_FIXTURE", true, RequestType.Sudden, GameDifficulty.Hard, 860001,
+                861001, 863001, "Img_bigtiles1",
                 "Fixture", "fixture", "Fixture", "Fixture", Array.Empty<OutgameRequestEffectDefinition>());
             ConstructorInfo constructor = typeof(OutgameRequestCatalog).GetConstructor(
                 BindingFlags.Instance | BindingFlags.NonPublic, null,

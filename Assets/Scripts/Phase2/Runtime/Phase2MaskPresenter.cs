@@ -20,6 +20,10 @@ namespace HATAGONG.Phase2
         private float _completionDuration;
         private float _completionElapsed;
         private Action _completionCallback;
+        private RawImage _chemicalOverlay;
+        private Texture2D _chemicalTexture;
+        private Color32[] _chemicalPixels;
+        private int _chemicalSeed;
 
         public bool IsBound => cover && cover.texture && _runtimeMaterial;
         public Texture BoundTexture => cover ? cover.texture : null;
@@ -45,9 +49,79 @@ namespace HATAGONG.Phase2
             return true;
         }
 
+        public bool RefreshBoundMask(RenderTexture maskTexture)
+        {
+            if (!cover || !_runtimeMaterial || !maskTexture) return false;
+            cover.texture = maskTexture;
+            cover.SetAllDirty();
+            return ReferenceEquals(cover.texture, maskTexture);
+        }
+
+        public bool BindChemicalOverlay(Phase2PaintGrid grid, int permanentSeed)
+        {
+            ReleaseChemicalOverlay();
+            if (grid == null || grid.ChemicalCellCount <= 0 || !cover) return grid != null && grid.ChemicalCellCount == 0;
+
+            GameObject overlayObject = new GameObject("ChemicalOverlayLayer", typeof(RectTransform), typeof(CanvasRenderer), typeof(RawImage));
+            overlayObject.layer = cover.gameObject.layer;
+            RectTransform rect = overlayObject.GetComponent<RectTransform>();
+            rect.SetParent(cover.rectTransform, false);
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+            rect.localScale = Vector3.one;
+            _chemicalOverlay = overlayObject.GetComponent<RawImage>();
+            _chemicalOverlay.raycastTarget = false;
+            _chemicalOverlay.color = Color.white;
+            _chemicalSeed = permanentSeed;
+            _chemicalTexture = new Texture2D(128, 128, TextureFormat.RGBA32, false, false)
+            {
+                name = "Phase2 Chemical Overlay (Runtime)",
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.DontSave
+            };
+            _chemicalPixels = new Color32[grid.TotalCellCount];
+            _chemicalOverlay.texture = _chemicalTexture;
+            return RefreshChemicalOverlay(grid);
+        }
+
+        public bool RefreshChemicalOverlay(Phase2PaintGrid grid)
+        {
+            if (grid == null || grid.ChemicalCellCount == 0) return true;
+            if (!_chemicalOverlay || !_chemicalTexture || _chemicalPixels == null || _chemicalPixels.Length != grid.TotalCellCount) return false;
+            for (int index = 0; index < _chemicalPixels.Length; index++)
+            {
+                if (grid.RequiredCoats(index) != 2 || grid.IsPainted(index))
+                {
+                    _chemicalPixels[index] = new Color32(0, 0, 0, 0);
+                    continue;
+                }
+
+                if (grid.CoatCount(index) == 1)
+                {
+                    _chemicalPixels[index] = new Color32(29, 31, 28, 245);
+                    continue;
+                }
+
+                uint noise = ChemicalNoise(_chemicalSeed, index);
+                byte red = (byte)(62 + noise % 43);
+                byte green = (byte)(54 + (noise >> 8) % 38);
+                byte blue = (byte)(28 + (noise >> 16) % 28);
+                byte alpha = (byte)(215 + (noise >> 24) % 36);
+                _chemicalPixels[index] = new Color32(red, green, blue, alpha);
+            }
+            _chemicalTexture.SetPixels32(_chemicalPixels);
+            _chemicalTexture.Apply(false, false);
+            _chemicalOverlay.SetAllDirty();
+            return true;
+        }
+
         public void ReleaseBinding()
         {
             CancelCompletion();
+            ReleaseChemicalOverlay();
             if (cover)
             {
                 cover.texture = null;
@@ -136,6 +210,34 @@ namespace HATAGONG.Phase2
             if (Application.isPlaying) Destroy(_runtimeMaterial);
             else DestroyImmediate(_runtimeMaterial);
             _runtimeMaterial = null;
+        }
+
+        private void ReleaseChemicalOverlay()
+        {
+            if (_chemicalOverlay)
+            {
+                _chemicalOverlay.gameObject.SetActive(false);
+                if (Application.isPlaying) Destroy(_chemicalOverlay.gameObject);
+                else DestroyImmediate(_chemicalOverlay.gameObject);
+            }
+            if (_chemicalTexture)
+            {
+                if (Application.isPlaying) Destroy(_chemicalTexture);
+                else DestroyImmediate(_chemicalTexture);
+            }
+            _chemicalOverlay = null;
+            _chemicalTexture = null;
+            _chemicalPixels = null;
+        }
+
+        private static uint ChemicalNoise(int seed, int index)
+        {
+            unchecked
+            {
+                uint value = (uint)(seed ^ (index * 374761393));
+                value = (value ^ (value >> 13)) * 1274126177u;
+                return value ^ (value >> 16);
+            }
         }
     }
 }

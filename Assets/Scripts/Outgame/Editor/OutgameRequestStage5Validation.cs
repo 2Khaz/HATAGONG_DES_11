@@ -488,8 +488,8 @@ namespace HATAGONG.Outgame.Editor
                     value.Definition.RequestType != first.Definition.RequestType ||
                     value.Definition.PermanentSeed != first.Definition.PermanentSeed ||
                     value.Phase1Seed != first.Phase1Seed ||
-                    value.Phase2Seed != first.Phase2Seed ||
-                    value.Phase3Seed != first.Phase3Seed)) return false;
+                    value.Phase3Seed != first.Phase3Seed ||
+                    value.Phase3ImageKey != first.Phase3ImageKey)) return false;
             }
             return true;
         }
@@ -506,6 +506,9 @@ namespace HATAGONG.Outgame.Editor
                     i % 2 == 0 ? RequestType.Normal : RequestType.Sudden,
                     i % 2 == 0 ? GameDifficulty.Easy : GameDifficulty.Hard,
                     850001 + i,
+                    851001 + i,
+                    853001 + i,
+                    "Img_bigtiles" + (i % 3 + 1),
                     "Fixture",
                     "fixture",
                     "Fixture",
@@ -522,7 +525,7 @@ namespace HATAGONG.Outgame.Editor
 
         private static string BatchSignature(OutgameRequestOfferBatch batch)
         {
-            return string.Join("|", batch.Offers.Select(value => value.Definition.RequestId + ":" + value.Phase1Seed + ":" + value.Phase2Seed + ":" + value.Phase3Seed));
+            return string.Join("|", batch.Offers.Select(value => value.Definition.RequestId + ":" + value.Phase1Seed + ":" + value.Phase3Seed + ":" + value.Phase3ImageKey));
         }
 
         private static bool HasReference(SerializedObject serialized, string name)

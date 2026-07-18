@@ -10,7 +10,7 @@ using UnityEngine.UI;
 
 namespace HATAGONG.Phase3Tangram
 {
-    public sealed class Phase3TangramManager : MonoBehaviour, IGamePhase
+    public sealed class Phase3TangramManager : MonoBehaviour, IGamePhase, IGameplayInputStatus
     {
         private static readonly Color[] PieceColors =
         {
@@ -52,6 +52,7 @@ namespace HATAGONG.Phase3Tangram
         private TangramPieceState dragOriginState;
         private int page;
         private int looseSortingSequence;
+        private float lastDragActivityAt = float.NegativeInfinity;
         private bool built;
         private bool inputRequested;
         private bool focusSuspended;
@@ -62,6 +63,9 @@ namespace HATAGONG.Phase3Tangram
         private float originalPlaneDistance;
         private GameDifficulty difficulty;
         private long activeSeed;
+        private string activeImageKey = string.Empty;
+        private Sprite activePuzzleSprite;
+        private Sprite activePieceSprite;
         private Vector3 boardOriginWorld;
         private Vector3 boardUnitXWorld;
         private Vector3 boardUnitYWorld;
@@ -85,10 +89,14 @@ namespace HATAGONG.Phase3Tangram
         public bool IsRunning { get; private set; }
         public bool IsCleared { get; private set; }
         public bool IsExitReady { get; private set; }
+        public bool IsGameplayInputEnabled => InputAllowed;
         public float GuideWorldWidth => Mathf.Max(0.003f, BoardWorldSide * 0.004f);
         public int PieceCount => pieces.Count;
         public int GuideCount => guide?.PolygonCount ?? 0;
         public long ActiveSeed => activeSeed;
+        public string ActiveImageKey => activeImageKey;
+        public Sprite ActivePuzzleSprite => activePuzzleSprite;
+        public float ActiveSnapRadiusRatio { get; private set; } = RequestEffectRuntime.DefaultSnapRadiusRatio;
         public GameRunContext RunContext { get; private set; }
         public event Action PhaseCleared;
         public event Action PhaseExitReady;
@@ -102,14 +110,28 @@ namespace HATAGONG.Phase3Tangram
             if (phaseBackground) phaseBackground.gameObject.SetActive(false);
             IsPrepared = IsRunning = IsCleared = IsExitReady = false;
             terminalClearCommitted = false;
+            ActiveSnapRadiusRatio = RequestEffectRuntime.GetPhase3SnapRadiusRatio(
+                context.HasEffect(RequestEffectRuntime.Slippery));
             if (!context.IsValid || !canvas || !graphicRaycaster || !eventSystem || !worldCamera || !scoreController || !phaseBackground || !deckHost || !deckPanel || !deckSprite || !EnsureDeckFrames()) return false;
             try
             {
+                activeImageKey = context.HasSelectedRequest ? context.Phase3ImageKey : "Img_bigtiles1";
+                activePuzzleSprite = ResolveRequestSprite(activeImageKey);
+                if (!activePuzzleSprite && !context.HasSelectedRequest) activePuzzleSprite = completionSprite;
+                activePieceSprite = null;
+                if (context.HasSelectedRequest && !activePuzzleSprite)
+                {
+                    Debug.LogError($"[Phase3Tangram] Unsupported or missing request image: key='{activeImageKey}'.", this);
+                    return false;
+                }
                 EnsureBuilt();
+                completionImage.sprite = activePuzzleSprite;
+                completionShineImage.sprite = activePuzzleSprite;
                 activeSeed = context.HasSelectedRequest ? context.Phase3Seed : (useFixedSeedForDebug ? fixedSeed : CreateRandomSeed());
                 TangramGenerationResult generated = Phase3TangramGenerator.Generate(context.Difficulty, activeSeed);
                 if (!generated.Success) { Debug.LogError($"[Phase3Tangram] Generation failed: {generated.FailureReason}", this); return false; }
                 difficulty = context.Difficulty;
+                Debug.Log($"[RequestEffect][Phase3] slippery={context.HasEffect(RequestEffectRuntime.Slippery)}, defaultSnapRadius={RequestEffectRuntime.DefaultSnapRadiusRatio:F2}, actualSnapRadius={ActiveSnapRadiusRatio:F2}, difficulty={difficulty}, finalSnapThreshold={ActiveSnapRadiusRatio:F2}", this);
                 int expectedCount = Phase3TangramGenerator.PieceCount(difficulty);
                 if (generated.Pieces.Count != expectedCount) throw new InvalidOperationException($"Generated piece count mismatch: expected={expectedCount}, actual={generated.Pieces.Count}.");
                 BuildPuzzle(generated);
@@ -154,7 +176,12 @@ namespace HATAGONG.Phase3Tangram
             gameObject.SetActive(false);
         }
 
-        public void SetInputEnabled(bool enabled) { inputRequested = enabled; ApplyInputGate(); }
+        public void SetInputEnabled(bool enabled)
+        {
+            if (!enabled) CancelActiveDragWithoutActivity();
+            inputRequested = enabled;
+            ApplyInputGate();
+        }
 
         public Vector3 LogicalToWorld(Vector2 logical)
         {
@@ -180,7 +207,9 @@ namespace HATAGONG.Phase3Tangram
                 highestOrder = piece.SortingOrder;
                 selectedPiece = piece;
             }
-            if (selectedPiece != null && selectedPiece.State == TangramPieceState.Loose) selectedPiece.SetSortingOrder(6000 + ++looseSortingSequence);
+            if (selectedPiece == null) return;
+            if (selectedPiece.State == TangramPieceState.Loose) selectedPiece.SetSortingOrder(6000 + ++looseSortingSequence);
+            GameplayInputActivity.NotifyValidGameplayInput(GamePhaseId.Phase3);
         }
 
         public void BeginSelectedDrag(Vector2 screenPosition)
@@ -202,19 +231,27 @@ namespace HATAGONG.Phase3Tangram
             draggingPiece.DragOffset = draggingPiece.transform.position - pointer;
             draggingPiece.SetState(TangramPieceState.Dragging);
             if (IsFinalUnplacedPiece(draggingPiece)) draggingPiece.SetSortingOrder(Phase3TangramPiece.FinalPieceDraggingSortingOrder);
+            lastDragActivityAt = Time.unscaledTime;
+            GameplayInputActivity.NotifyValidGameplayInput(GamePhaseId.Phase3);
             DragSelected(screenPosition);
         }
 
         public void DragSelected(Vector2 screenPosition)
         {
             if (!InputAllowed || !draggingPiece || !TryScreenToWorld(screenPosition, out Vector3 pointer)) return;
-            draggingPiece.transform.position = pointer + draggingPiece.DragOffset;
+            Vector3 nextPosition = pointer + draggingPiece.DragOffset;
+            bool moved = (nextPosition - draggingPiece.transform.position).sqrMagnitude > 0.000001f;
+            draggingPiece.transform.position = nextPosition;
+            if (!moved || Time.unscaledTime - lastDragActivityAt < 0.25f) return;
+            lastDragActivityAt = Time.unscaledTime;
+            GameplayInputActivity.NotifyValidGameplayInput(GamePhaseId.Phase3);
         }
 
         public void RotateActive(int direction)
         {
             if (!InputAllowed || !draggingPiece) return;
             draggingPiece.Rotate45(direction);
+            GameplayInputActivity.NotifyValidGameplayInput(GamePhaseId.Phase3);
         }
 
         public void EndSelectedDrag(Vector2 screenPosition)
@@ -224,14 +261,21 @@ namespace HATAGONG.Phase3Tangram
             draggingPiece = null;
             selectedPiece = null;
             piece.transform.position = ProjectOntoBoardPlane(piece.transform.position);
-            if (RectTransformUtility.RectangleContainsScreenPoint(deck, screenPosition, EventCamera)) { ReturnToDeck(piece); return; }
+            if (RectTransformUtility.RectangleContainsScreenPoint(deck, screenPosition, EventCamera))
+            {
+                LogSnapResult(piece, "PointerReleasedOverDeck", false);
+                ReturnToDeck(piece);
+                return;
+            }
             if (!RectTransformUtility.RectangleContainsScreenPoint(field, screenPosition, EventCamera))
             {
+                LogSnapResult(piece, "PointerReleasedOutsideField", false);
                 if (dragOriginState == TangramPieceState.Loose) PlaceLooseInsideField(piece);
                 else CancelDrop(piece);
                 return;
             }
-            if (TryInterchangeableSnap(piece)) { RefreshVisibility(); return; }
+            if (TryInterchangeableSnap(piece, out string rejectReason)) { RefreshVisibility(); return; }
+            LogSnapResult(piece, rejectReason, false);
             PlaceLooseInsideField(piece);
         }
 
@@ -324,7 +368,7 @@ namespace HATAGONG.Phase3Tangram
                 var go = new GameObject($"TangramPiece_{generatedPiece.Id}", typeof(MeshFilter), typeof(MeshRenderer), typeof(PolygonCollider2D), typeof(Phase3TangramPiece));
                 go.transform.SetParent(worldRoot, false);
                 Phase3TangramPiece piece = go.GetComponent<Phase3TangramPiece>();
-                piece.Initialize(generatedPiece.Id, originalShape, assignment, PieceColors[i % PieceColors.Length], i / 4, i % 4, generatedPiece.InitialRotationStep);
+                piece.Initialize(generatedPiece.Id, originalShape, assignment, PieceColors[i % PieceColors.Length], activePieceSprite, i / 4, i % 4, generatedPiece.InitialRotationStep);
                 pieces.Add(piece);
             }
             page = 0;
@@ -380,12 +424,19 @@ namespace HATAGONG.Phase3Tangram
 
         private bool TryInterchangeableSnap(Phase3TangramPiece dragged)
         {
+            return TryInterchangeableSnap(dragged, out _);
+        }
+
+        private bool TryInterchangeableSnap(Phase3TangramPiece dragged, out string rejectReason)
+        {
             List<Vector2> current = PiecePlaneShape(dragged);
             Vector3 originalPosition = dragged.transform.position;
             Quaternion originalRotation = dragged.transform.rotation;
             Vector3 originalScale = dragged.transform.localScale;
-            float radius = BoardWorldSide * 0.20f;
+            float radius = BoardWorldSide * ActiveSnapRadiusRatio;
             float tolerance = BoardWorldSide * 0.008f;
+            rejectReason = "NoCompatibleTargetWithinSnapRadius";
+            float nearestDistance = float.PositiveInfinity;
 
             for (int i = 0; i < pieces.Count; i++)
             {
@@ -394,16 +445,30 @@ namespace HATAGONG.Phase3Tangram
                 TangramTargetAssignment candidate = owner.Assignment;
                 Vector3 targetCenter = LogicalToWorld(candidate.TargetPosition);
                 Vector2 translation = WorldToPlane(targetCenter) - WorldToPlane(dragged.transform.position);
-                if (translation.sqrMagnitude > radius * radius) continue;
+                float distance = translation.magnitude;
+                nearestDistance = Mathf.Min(nearestDistance, distance);
+                if (translation.sqrMagnitude > radius * radius)
+                {
+                    rejectReason = $"PositionDistance({nearestDistance:F5}>{radius:F5})";
+                    continue;
+                }
                 List<Vector2> targetWorld = TargetWorldPolygon(candidate);
-                if (!MatchPolygonsTranslated(current, translation, targetWorld, tolerance)) continue;
+                if (!MatchPolygonsTranslated(current, translation, targetWorld, tolerance))
+                {
+                    rejectReason = $"RotationOrShapeMismatch(distance={distance:F5},tolerance={tolerance:F5})";
+                    continue;
+                }
 
                 dragged.transform.position = targetCenter;
                 List<Vector2> finalShape = PiecePlaneShape(dragged);
-                if (!MatchPolygons(finalShape, targetWorld, tolerance) || !InsideField(finalShape) || dragged.transform.rotation != originalRotation || dragged.transform.localScale != originalScale)
+                bool finalShapeMatches = MatchPolygons(finalShape, targetWorld, tolerance);
+                bool targetInsideField = InsideField(targetWorld);
+                bool transformStable = dragged.transform.rotation == originalRotation && dragged.transform.localScale == originalScale;
+                if (!finalShapeMatches || !targetInsideField || !transformStable)
                 {
                     dragged.transform.position = originalPosition;
-                    return false;
+                    rejectReason = !finalShapeMatches ? "FinalShapeMismatch" : !targetInsideField ? "GeneratedTargetOutsideField" : "TransformChangedDuringSnap";
+                    continue;
                 }
 
                 if (owner != dragged)
@@ -415,12 +480,16 @@ namespace HATAGONG.Phase3Tangram
                 {
                     if (owner != dragged) SwapAssignments(dragged, owner);
                     dragged.transform.position = originalPosition;
-                    return false;
+                    rejectReason = "AssignmentSwapVerificationFailed";
+                    continue;
                 }
 
                 dragged.SetState(TangramPieceState.Placed);
                 dragged.SetSortingOrder(Phase3TangramPiece.PlacedSortingOrderBase + dragged.Id);
+                GameplayInputActivity.NotifyValidGameplayInput(GamePhaseId.Phase3);
                 scoreController.AddScore(200, GamePhaseId.Phase3, ScoreReason.Other);
+                GameSfxPlayer.Play(GameSfxId.Snap);
+                LogSnapResult(dragged, "Placed", true);
                 CheckCompletion();
                 return true;
             }
@@ -449,7 +518,7 @@ namespace HATAGONG.Phase3Tangram
         {
             if (IsExitReady) return;
             StopCompletionShine();
-            if (!isActiveAndEnabled || !completionShineImage || !completionSprite)
+            if (!isActiveAndEnabled || !completionShineImage || !activePuzzleSprite)
             {
                 FinishCompletionPresentation();
                 return;
@@ -539,6 +608,19 @@ namespace HATAGONG.Phase3Tangram
             PhaseExitReady?.Invoke();
         }
 
+        private static Sprite ResolveRequestSprite(string imageKey)
+        {
+            string resourcePath;
+            switch (imageKey)
+            {
+                case "Img_bigtiles1": resourcePath = "Ingame/Img_bigtiles1"; break;
+                case "Img_bigtiles2": resourcePath = "Ingame/Img_bigtiles2"; break;
+                case "Img_bigtiles3": resourcePath = "Ingame/Img_bigtiles3"; break;
+                default: return null;
+            }
+            return Resources.Load<Sprite>(resourcePath);
+        }
+
         private bool IsFinalUnplacedPiece(Phase3TangramPiece candidate)
         {
             if (!candidate || candidate.IsPlaced) return false;
@@ -586,12 +668,115 @@ namespace HATAGONG.Phase3Tangram
             RefreshVisibility();
         }
 
+        private void CancelActiveDragWithoutActivity()
+        {
+            if (!draggingPiece)
+            {
+                selectedPiece = null;
+                return;
+            }
+
+            Phase3TangramPiece piece = draggingPiece;
+            draggingPiece = null;
+            selectedPiece = null;
+            if (dragOriginState == TangramPieceState.Loose && piece.HasStableLoosePosition)
+            {
+                piece.transform.position = piece.LastStableLoosePosition;
+                piece.transform.localScale = Vector3.one * FieldWorldScale;
+                piece.SetState(TangramPieceState.Loose);
+                piece.SetSortingOrder(6000 + ++looseSortingSequence);
+            }
+            else
+            {
+                piece.SetState(TangramPieceState.InDeck);
+                piece.HasStableLoosePosition = false;
+                PlaceAtOriginalDeckSlot(piece);
+            }
+            RefreshVisibility();
+        }
+
         private void ReturnToDeck(Phase3TangramPiece piece)
         {
             piece.SetState(TangramPieceState.InDeck);
             piece.HasStableLoosePosition = false;
             PlaceAtOriginalDeckSlot(piece);
             RefreshVisibility();
+            GameplayInputActivity.NotifyValidGameplayInput(GamePhaseId.Phase3);
+        }
+
+        public bool TryAutoPlaceEligiblePiece()
+        {
+            if (!InputAllowed || draggingPiece || completionPresentationFinishing) return false;
+            var eligible = new List<Phase3TangramPiece>();
+            for (int i = 0; i < pieces.Count; i++)
+                if (pieces[i] && !pieces[i].IsPlaced && pieces[i] != draggingPiece && TryGetCorrectRotationStep(pieces[i], out _)) eligible.Add(pieces[i]);
+            if (eligible.Count == 0) return false;
+            Phase3TangramPiece piece = eligible[UnityEngine.Random.Range(0, eligible.Count)];
+            if (selectedPiece == piece) selectedPiece = null;
+            piece.transform.position = LogicalToWorld(piece.Assignment.TargetPosition);
+            piece.transform.localScale = Vector3.one * FieldWorldScale;
+            TryGetCorrectRotationStep(piece, out int correctStep);
+            piece.SetRotationStep(correctStep);
+            piece.SetState(TangramPieceState.Placed);
+            piece.SetSortingOrder(Phase3TangramPiece.PlacedSortingOrderBase + piece.Id);
+            scoreController.AddScore(100, GamePhaseId.Phase3, ScoreReason.Other);
+            RefreshVisibility();
+            CheckCompletion();
+            return true;
+        }
+
+        public bool TryCorrectEligibleRotations(int maximumCount, out int correctedCount)
+        {
+            correctedCount = 0;
+            if (!InputAllowed || draggingPiece || completionPresentationFinishing || maximumCount <= 0) return false;
+            var eligible = new List<Phase3TangramPiece>();
+            for (int i = 0; i < pieces.Count; i++)
+            {
+                Phase3TangramPiece piece = pieces[i];
+                if (piece && !piece.IsPlaced && piece != draggingPiece && TryGetCorrectRotationStep(piece, out int correctStep) && piece.CurrentRotationStep != correctStep) eligible.Add(piece);
+            }
+            while (eligible.Count > 0 && correctedCount < maximumCount)
+            {
+                int index = UnityEngine.Random.Range(0, eligible.Count);
+                Phase3TangramPiece piece = eligible[index];
+                eligible.RemoveAt(index);
+                TryGetCorrectRotationStep(piece, out int correctStep);
+                piece.SetRotationStep(correctStep);
+                correctedCount++;
+            }
+            return correctedCount > 0;
+        }
+
+        private static bool TryGetCorrectRotationStep(Phase3TangramPiece piece, out int step)
+        {
+            var rotated = new List<Vector2>(piece.OriginalShape.Count);
+            for (int candidate = 0; candidate < 8; candidate++)
+            {
+                rotated.Clear();
+                float radians = candidate * 45f * Mathf.Deg2Rad;
+                float cosine = Mathf.Cos(radians), sine = Mathf.Sin(radians);
+                for (int i = 0; i < piece.OriginalShape.Count; i++)
+                {
+                    Vector2 point = piece.OriginalShape[i];
+                    rotated.Add(new Vector2(point.x * cosine - point.y * sine, point.x * sine + point.y * cosine) + piece.Assignment.TargetPosition);
+                }
+                if (MatchPolygons(rotated, piece.Assignment.AbsolutePolygon, 0.001f)) { step = candidate; return true; }
+            }
+            step = 0;
+            return false;
+        }
+
+        [System.Diagnostics.Conditional("UNITY_EDITOR"), System.Diagnostics.Conditional("DEVELOPMENT_BUILD")]
+        private void LogSnapResult(Phase3TangramPiece piece, string reason, bool snapApplied)
+        {
+            if (!piece) return;
+            int placedCount = 0;
+            for (int i = 0; i < pieces.Count; i++) if (pieces[i] && pieces[i].IsPlaced) placedCount++;
+            Vector3 target = LogicalToWorld(piece.Assignment.TargetPosition);
+            float distance = Vector2.Distance(WorldToPlane(piece.transform.position), WorldToPlane(target));
+            bool finalPiece = IsFinalUnplacedPiece(piece) || placedCount + (snapApplied ? 0 : 1) == pieces.Count;
+            if (!snapApplied || finalPiece)
+                Debug.Log($"[Phase3SnapResult] pieceId={piece.Id}, assignmentId={piece.Assignment.TargetId}, state={piece.State}, positionDistance={distance:F5}, positionThreshold={BoardWorldSide * ActiveSnapRadiusRatio:F5}, rotationStep={piece.CurrentRotationStep}, snapApplied={snapApplied}, placedCount={placedCount}/{pieces.Count}, finalPiece={finalPiece}, rejectReason={reason}", this);
         }
 
         private void SetPage(int value)

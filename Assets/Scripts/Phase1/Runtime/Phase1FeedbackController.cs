@@ -1,3 +1,4 @@
+using HATAGONG.GameFlow;
 using UnityEngine;
 
 namespace HATAGONG.Phase1
@@ -6,21 +7,20 @@ namespace HATAGONG.Phase1
     {
         [SerializeField] private AudioSource audioSource;
         [SerializeField] private Phase1GameConfig config;
-        private bool reported;
-        private void Awake(){ReportMissingOnce();}
-        public void ReportMissingOnce(){if(reported||!config)return;reported=true;if(!config.NormalHitClip||!config.DamageStateChangeClip||!config.DestroyClip||!config.CoreHitClip)Debug.Log("[Phase1] One or more feedback AudioClip slots are empty; gameplay will continue silently for those slots.");}
-        public void Play(Phase1TileRole role,Phase1TileGrade grade,bool stateChanged,bool destroyed)
+        private void Awake(){GameSfxPlayer.EnsureInstance();ReportMissingOnce();}
+        public void ReportMissingOnce(){}
+        public void Play(Phase1TileRole role,Phase1TileGrade grade,bool stateChanged,bool destroyed,bool directImpact)
         {
-            if(!config)return; AudioClip clip;float volume;
-            var visual=config.GetVisualSet(grade);
-            if(destroyed){clip=visual!=null&&visual.DestroyAudioOverride?visual.DestroyAudioOverride:config.DestroyClip;volume=config.DestroyVolume;}
-            else if(stateChanged){clip=visual!=null&&visual.DamageAudioOverride?visual.DamageAudioOverride:config.DamageStateChangeClip;volume=config.DamageStateChangeVolume;}
-            else if(visual!=null&&visual.HitAudioOverride){clip=visual.HitAudioOverride;volume=config.NormalHitVolume;}
-            else if(role==Phase1TileRole.Core){clip=config.CoreHitClip?config.CoreHitClip:config.NormalHitClip;volume=config.CoreHitClip?config.CoreHitVolume:config.NormalHitVolume;}
-            else{clip=config.NormalHitClip;volume=config.NormalHitVolume;}
-            if(config.EnableSound&&audioSource&&clip)audioSource.PlayOneShot(clip,volume);
+            if(!config)return;
+            if(directImpact)
+            {
+                bool powerHit=IngameItemSystemController.Instance&&IngameItemSystemController.Instance.ActiveItem==GameItemId.Hammer;
+                GameSfxPlayer.Play(powerHit?GameSfxId.PowerHit:GameSfxId.Hit);
+            }
+            if(destroyed)GameSfxPlayer.Play(GameSfxId.TileDestroy);
+            else if(stateChanged)GameSfxPlayer.Play(GameSfxId.TileCrack);
             bool vibrate=config.EnableVibration&&(destroyed?config.VibrateOnDestroy:stateChanged?config.VibrateOnDamageStateChange:config.VibrateOnNormalHit);
-            if(vibrate)VibrateSafely();
+            if(vibrate&&IngameOptionPreferences.VibrationEnabled)VibrateSafely();
         }
         private static void VibrateSafely()
         {

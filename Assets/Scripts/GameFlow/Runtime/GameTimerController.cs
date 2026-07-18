@@ -33,5 +33,7 @@ namespace HATAGONG.GameFlow
         public void ResetTimer() => timer?.ResetTimer();
         public void ResetAndStartTimer() { timer?.ResetTimer(); timer?.StartTimer(); }
         public void StopTimer() => timer?.StopTimer();
+        public bool TryAddSeconds(double seconds, double maximumSeconds) => timer != null && timer.TryAddSeconds(seconds, maximumSeconds);
+        public bool TrySetDuration(double seconds) => timer != null && timer.TrySetDuration(seconds);
     }
 }

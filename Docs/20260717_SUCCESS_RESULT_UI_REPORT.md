@@ -4,20 +4,13 @@
 
 - 최종 판정: `STATIC READY / SUCCESS UI ANIMATION AND LOBBY TRANSITION PLAY MODE VALIDATION REQUIRED`
 - Branch: `OutGame_Contec`
-- HEAD: `b3848fe10603d7a027a722d3611d4589f26fc88d`
-- 기존 Staged: 6개 파일을 그대로 유지했으며 Unstage 또는 내용 변경을 수행하지 않았다.
-  - `Assets/Resources/Ingame/UI/Img_GamePanelCase.png`
-  - `Assets/Resources/Ingame/UI/Img_GamePanelCase.png.meta`
-  - `Assets/Scripts/GameFlow/Editor/IngameHudPersistenceFix.cs`
-  - `Assets/Scripts/GameFlow/Editor/PrePhase2Setup.cs`
-  - `Assets/Scripts/Phase1/Editor/Phase1PrototypeSetup.cs`
-  - `Docs/20260717_RESOURCE_SPRITE_REFERENCE_STABILITY_REPORT.md`
+- HEAD: `b577eea41d68c996eaeaeb8e501cdffd2eb930cd`
+- 기존 Staged: 0개
 - 이번 작업 수정 파일:
-  - `Assets/Scenes/INGAME.unity`
   - `Assets/Scripts/GameFlow/Runtime/GameSessionController.cs`
-  - `Assets/Scripts/GameFlow/Runtime/PhaseTransitionController.cs`
   - `Assets/Scripts/GameFlow/UI/PhaseTransitionOverlay.cs`
-- 신규 파일: `Docs/20260717_SUCCESS_RESULT_UI_REPORT.md`
+  - `Docs/20260717_SUCCESS_RESULT_UI_REPORT.md`
+- 신규 파일: 0개
 - 예상 밖 변경: 0개
 - Commit/Push: 미실행
 - Unity 실행: 미실행
@@ -79,14 +72,42 @@ SuccessResultRoot
 - Result Root: 기존 공용 결과 Overlay 계층을 사용한다.
 - Dim: 검정 alpha 0.68, raycastTarget false.
 - InputCatcher: 전체 화면 투명 Image 하나이며 raycastTarget true. 확인 Button이 아니다.
-- Clipboard Root: Img_questui 비율을 유지하며 폭 1040으로 표시한다. INGAME 1080 기준 약 96.3%로 가시성을 확장했다.
-- 내부 Section, 아이콘, 텍스트, 폰트는 기존 760 기준 배치를 `1040/760` 배율로 함께 확대해 패널과 내용 비율을 유지한다.
+- Clipboard Root: Img_questui 비율을 유지한다. INGAME 기준 Canvas 1440×2560에서는 폭 1040(화면 폭의 약 72.2%)으로 표시한다.
+- 내부 Section, 아이콘, 텍스트, 폰트는 760 기준 디자인 좌표를 유지하고 Clipboard Root의 단일 균일 Scale로 함께 확대해 패널과 내용 비율을 유지한다.
 - 표시 순서: `CLEAR! → 획득 점수 → 남은 시간 → 총 점수 → 별도 골드 패널`.
 - CLEAR 제목: 노란색 굵은 글씨, 짙은 외곽선으로 흰 클립보드 배경에서도 식별되도록 구성했다.
 - 점수와 시간 숫자: 굵은 진청색으로 강조한다.
+- 획득 점수와 남은 시간은 동일한 왼쪽 시작선에 맞추고 두 TMP 영역 모두 Left 정렬한다. 760 기준 텍스트 Rect는 위치 `(90,0)`, 크기 `420×88`이다.
+- 골드 패널: 클립보드 폭의 약 65.8%로 축소하고 레퍼런스의 하단 보상 영역 위치에 배치해 Img_questui의 흰 종이 하단과 외곽 테두리가 가려지지 않도록 했다.
+- 골드 패널 내부는 첨부 레퍼런스를 기준으로 아이콘 위치 `(-172,-25)`, 크기 `100×100`, 텍스트 위치 `(45,-25)`, 크기 `310×90`, Left 정렬로 배치한다. 아이콘과 텍스트 행을 함께 아래로 내려 패널의 클립 장식을 가리지 않는다.
+- 제공된 368×652 레퍼런스의 픽셀 중심을 1440 기준 Canvas로 역산하여 Title/Score/Time/Total/Gold의 760 기준 Y 좌표를 각각 `396 / 266 / 118 / -38 / -251`로 배치했다.
 - Quest Panel, 아이콘, 텍스트: 모두 raycastTarget false다.
 - 성공용 확인 Button: 0개
 - 패배 UI와 성공 UI는 각각 상대 Result 활성 상태를 검사하므로 동시 표시되지 않는다.
+
+## 앵커 및 화면 비율 전수조사
+
+| 시각 요소 | Anchor / Pivot | 크기·좌표 기준 | 화면 비율 대응 |
+|---|---|---|---|
+| Canvas | CanvasScaler `Scale With Screen Size` | Reference 1440×2560, Match 0.5 | Unity CanvasScaler 적용 |
+| Game_UI_Transition | Stretch / 중앙 Pivot | 부모 Offset 0 | 전체 화면 추종 |
+| PhaseTransitionOverlay | Stretch / 중앙 Pivot | 부모 Offset 0 | 전체 화면 추종 |
+| SuccessResultRoot | Stretch / 중앙 Pivot | 부모 Offset 0 | 전체 화면 추종 |
+| Dim | Stretch / 중앙 Pivot | 부모 Offset 0 | 전체 화면 추종 |
+| InputCatcher | Stretch / 중앙 Pivot | 부모 Offset 0 | 전체 화면 추종 |
+| ClipboardRoot | Center / Center | 기준 크기 760, 기준 최종 좌표 `(0,-20)` | 부모 폭·높이 중 제한 축 기준 단일 균일 Scale |
+| Title_Clear | Center / Center | Clipboard 760 기준 `(0,396)` | Clipboard와 함께 균일 이동·확대축소 |
+| ScoreSection 및 자식 이미지·텍스트 | Center / Center | Clipboard 760 기준 `(0,266)` | Clipboard와 함께 균일 이동·확대축소 |
+| TimeSection 및 자식 이미지·텍스트 | Center / Center | Clipboard 760 기준 `(0,118)` | Clipboard와 함께 균일 이동·확대축소 |
+| TotalScoreSection 및 텍스트 | Center / Center | Clipboard 760 기준 `(0,-38)` | Clipboard와 함께 균일 이동·확대축소 |
+| GoldPanel 및 자식 이미지·텍스트 | Center / Center | Clipboard 760 기준 `(0,-251)` | Clipboard와 함께 균일 이동·확대축소 |
+
+- 조사 결과 기존 전체 화면 Root/Dim/InputCatcher의 Stretch Anchor는 올바르게 설정돼 있었다.
+- 기존 Clipboard와 모든 자식에도 Center Anchor/Pivot가 명시돼 있었으나, 각 크기·좌표를 고정 `1040/760` 값으로 개별 확대해 종횡비 변경을 별도로 처리하지 않았다.
+- 보정 후에는 1440×2560에서 기존 폭 1040과 모든 현재 좌표를 그대로 재현한다.
+- 다른 종횡비에서는 `min(화면 폭 × 1040/1440, 화면 높이 × 1040/2560)`로 Clipboard 표시 폭을 정하고, 모든 이미지·텍스트·폰트·간격을 동일 Scale로 이동 및 확대축소한다.
+- `OnRectTransformDimensionsChange`에서 화면 영역 변경을 다시 계산하므로 해상도 또는 Game View 종횡비가 바뀌어도 중앙 정렬과 내부 비율을 유지한다.
+- 별도 Safe Area 강제 이동은 적용하지 않았다. 현재 좌표 유지 요구와 충돌하지 않게 전체 화면 중앙 기준만 사용한다.
 
 ## 등장 연출
 
@@ -95,7 +116,7 @@ SuccessResultRoot
 - 최종 위치: `(0, -20)`
 - 재생 시간: 총 0.52초(상승 0.42초 + 정착 0.10초)
 - Overshoot: 짧은 65 unit 정착 구간만 사용한다.
-- 회전/Scale 변화: 없음
+- 회전 변화: 없음. Scale은 화면 비율 대응용 균일 Scale만 사용하며 등장 애니메이션 중에는 변하지 않는다.
 - Time Scale 영향: `Time.unscaledDeltaTime` 사용으로 timeScale 0에서도 진행한다.
 - 중복 연출 방어: 성공 Result 중복 표시 거부 및 단일 `successEntrance` Coroutine을 사용한다.
 - 등장 중 입력 차단: InputCatcher는 뒤 게임 입력을 흡수하지만 `successInputEnabled=false`라 확인 동작을 수행하지 않는다.
@@ -107,11 +128,12 @@ SuccessResultRoot
 - 점수 계산 코드 변경: 0개
 - 골드 계산 코드 변경: 0개
 - 남은 시간 출처: `GameTimerController.DisplayedSeconds`
-- 획득 점수 출처: 기존 `Phase3ScoreRules.PhaseClearScore` (`1000`), 표시 전용 참조
-- 총점 출처: Score lock 직전의 `GameScoreController.CurrentScore`
+- 획득 점수 출처: Score lock 직전의 `GameScoreController.CurrentScore` 전체 값
+- 시간 추가 점수: `GameTimerController.DisplayedSeconds × 100`
+- 총점 출처: `획득 점수 + 시간 추가 점수`
 - 골드 출처: 사용자 지정 UI 계약에 따라 이번 성공 화면은 `0 골드`로 고정 표시한다.
 - 골드 계산식은 만들지 않았고 총점 비례 또는 임시 보상 저장을 하지 않았다.
-- Phase별 점수, Snap, 자동 부착, Clear, 총점 계산식은 수정하지 않았다.
+- Phase별 점수, Snap, 자동 부착, Clear의 플레이 중 누적 규칙은 수정하지 않았다. 시간 추가 점수는 성공 정산 총점에서만 계산한다.
 
 ## 전체 화면 입력
 

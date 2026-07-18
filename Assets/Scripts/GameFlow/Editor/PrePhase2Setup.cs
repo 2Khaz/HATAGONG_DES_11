@@ -28,6 +28,7 @@ namespace HATAGONG.GameFlowEditor
             Set(phasePresenter,("phaseText",phaseText),("phaseDescription",phaseDialog),("activeDotSprite",activeDot),("inactiveDotSprite",inactiveDot));SetArray(phasePresenter,"dots",dots);SetStringArray(phasePresenter,"descriptions",new[]{"철 거","도 포","시 공"});
             var transitionRoot=EnsureOverlayRoot(canvas,phaseText.font);
             var startOverlay=transitionRoot.transform.Find("StartOverlay").GetComponent<GameStartOverlay>();var phaseOverlay=transitionRoot.transform.Find("PhaseTransitionOverlay").GetComponent<PhaseTransitionOverlay>();
+            EnsureIdleGuide(canvas,session);
             Set(session,("timer",timer),("score",score),("startOverlay",startOverlay),("transition",transition));SetArray(session,"phases",new Object[]{adapter});SetInt(session,"difficulty",(int)GameDifficulty.Hard);SetInt(session,"initialPhase",(int)GamePhaseId.Phase1);Set(transition,("overlay",phaseOverlay),("phaseHud",phasePresenter));
             SetBool(timer,"startOnStart",false);SetBool(board,"generateOnStart",false);
             phasePresenter.SetPhase(GamePhaseId.Phase1);requestPresenter.Present(RequestType.Normal);
@@ -35,20 +36,29 @@ namespace HATAGONG.GameFlowEditor
         }
         private static GameObject EnsureOverlayRoot(GameObject canvas,TMP_FontAsset font)
         {
+            var transitionFont=AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Resources/Fonts/KERISKEDU_B SDF.asset");var transitionMaterial=AssetDatabase.LoadAssetAtPath<Material>("Assets/Resources/Fonts/KERISKEDU_B Phase Clear.mat");if(!transitionFont||!transitionMaterial)throw new System.InvalidOperationException("KERISKEDU_B transition font assets are missing.");
             var root=FindOrCreate(canvas,"Game_UI_Transition");Stretch(root.GetComponent<RectTransform>());root.transform.SetAsLastSibling();
             var start=FindOrCreate(root,"StartOverlay");Stretch(start.GetComponent<RectTransform>());var startGroup=Add<CanvasGroup>(start);startGroup.alpha=1;startGroup.blocksRaycasts=true;
             var startDim=FindOrCreate(start,"BackgroundDim");Stretch(startDim.GetComponent<RectTransform>());var startImage=Add<Image>(startDim);startImage.color=new Color(0,0,0,.5f);startImage.raycastTarget=true;
-            var startMessage=FindOrCreate(start,"StartMessage");Stretch(startMessage.GetComponent<RectTransform>());var startText=Add<TextMeshProUGUI>(startMessage);ConfigureText(startText,font,72);
+            var startMessage=FindOrCreate(start,"StartMessage");Stretch(startMessage.GetComponent<RectTransform>());var startText=Add<TextMeshProUGUI>(startMessage);ConfigureText(startText,transitionFont,120);startText.color=Color.black;startText.fontSharedMaterial=transitionMaterial;startText.textWrappingMode=TextWrappingModes.NoWrap;
             var startOverlay=Add<GameStartOverlay>(start);Set(startOverlay,("canvasGroup",startGroup),("messageText",startText));
-            SetFloat(startOverlay,"readyDuration",.85f);SetFloat(startOverlay,"readyToGoGap",.15f);SetFloat(startOverlay,"goDuration",.45f);SetFloat(startOverlay,"fadeDuration",.2f);
+            SetFloat(startOverlay,"readyDuration",.85f);SetFloat(startOverlay,"readyToGoGap",.3f);SetFloat(startOverlay,"goDuration",.45f);SetFloat(startOverlay,"fadeDuration",.2f);
             var phase=FindOrCreate(root,"PhaseTransitionOverlay");Stretch(phase.GetComponent<RectTransform>());var phaseGroup=Add<CanvasGroup>(phase);phaseGroup.alpha=0;phaseGroup.blocksRaycasts=false;
-            var phaseDim=FindOrCreate(phase,"BackgroundDim");Stretch(phaseDim.GetComponent<RectTransform>());var phaseImage=Add<Image>(phaseDim);phaseImage.color=new Color(0,0,0,.2f);phaseImage.raycastTarget=true;
+            var phaseDim=FindOrCreate(phase,"BackgroundDim");Stretch(phaseDim.GetComponent<RectTransform>());var phaseImage=Add<Image>(phaseDim);phaseImage.color=Color.clear;phaseImage.raycastTarget=true;
             var banner=FindOrCreate(phase,"TransitionBanner");var bannerRt=banner.GetComponent<RectTransform>();bannerRt.anchorMin=bannerRt.anchorMax=bannerRt.pivot=new Vector2(.5f,.5f);bannerRt.sizeDelta=new Vector2(1000,180);
-            var bannerImage=Add<Image>(banner);bannerImage.color=new Color(.08f,.2f,.42f,.95f);bannerImage.raycastTarget=false;
-            var message=FindOrCreate(banner,"MessageText");Stretch(message.GetComponent<RectTransform>());var messageText=Add<TextMeshProUGUI>(message);ConfigureText(messageText,font,58);
+            var bannerImage=Add<Image>(banner);bannerImage.color=Color.clear;bannerImage.raycastTarget=false;
+            var message=FindOrCreate(banner,"MessageText");Stretch(message.GetComponent<RectTransform>());var messageText=Add<TextMeshProUGUI>(message);ConfigureText(messageText,transitionFont,112);messageText.fontSharedMaterial=transitionMaterial;messageText.textWrappingMode=TextWrappingModes.NoWrap;
             var phaseOverlay=Add<PhaseTransitionOverlay>(phase);Set(phaseOverlay,("canvasGroup",phaseGroup),("banner",bannerRt),("messageText",messageText));return root;
         }
-        private static void ConfigureText(TextMeshProUGUI text,TMP_FontAsset font,float size){text.font=font;text.fontSize=size;text.alignment=TextAlignmentOptions.Center;text.color=Color.white;text.raycastTarget=false;}
+        private static IdleGameplayGuidePresenter EnsureIdleGuide(GameObject canvas,GameSessionController session)
+        {
+            var font=AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Resources/Fonts/KERISKEDU_B SDF.asset");var material=AssetDatabase.LoadAssetAtPath<Material>("Assets/Resources/Fonts/KERISKEDU_B Idle Guide.mat");if(!font||!material)throw new System.InvalidOperationException("Idle guide font assets are missing.");
+            var root=FindOrCreate(canvas,"IdleGuideRoot");var rootRt=root.GetComponent<RectTransform>();rootRt.anchorMin=rootRt.anchorMax=rootRt.pivot=new Vector2(.5f,.5f);rootRt.anchoredPosition=Vector2.zero;rootRt.sizeDelta=new Vector2(1100,180);rootRt.localScale=Vector3.one;root.transform.SetSiblingIndex(Mathf.Min(1,root.transform.parent.childCount-1));
+            var group=Add<CanvasGroup>(root);group.alpha=0;group.interactable=false;group.blocksRaycasts=false;
+            var textObject=FindOrCreate(root,"GuideText");Stretch(textObject.GetComponent<RectTransform>());var text=Add<TextMeshProUGUI>(textObject);ConfigureText(text,font,80);text.fontSharedMaterial=material;text.textWrappingMode=TextWrappingModes.NoWrap;
+            var presenter=Add<IdleGameplayGuidePresenter>(root);Set(presenter,("session",session),("canvasGroup",group),("guideText",text));SetFloat(presenter,"idleThresholdSeconds",IdleGameplayGuidePresenter.DefaultIdleThresholdSeconds);SetFloat(presenter,"pulsePeriodSeconds",IdleGameplayGuidePresenter.DefaultPulsePeriodSeconds);SetFloat(presenter,"minimumAlpha",IdleGameplayGuidePresenter.DefaultMinimumAlpha);SetFloat(presenter,"maximumAlpha",IdleGameplayGuidePresenter.DefaultMaximumAlpha);return presenter;
+        }
+        private static void ConfigureText(TextMeshProUGUI text,TMP_FontAsset font,float size){text.font=font;text.enableAutoSizing=false;text.fontSize=size;text.alignment=TextAlignmentOptions.Center;text.color=Color.white;text.raycastTarget=false;}
         private static GameObject FindOrCreate(GameObject parent,string name){var child=parent.transform.Find(name);if(child)return child.gameObject;var go=new GameObject(name,typeof(RectTransform));go.transform.SetParent(parent.transform,false);return go;}
         private static void Stretch(RectTransform rt){rt.anchorMin=Vector2.zero;rt.anchorMax=Vector2.one;rt.offsetMin=rt.offsetMax=Vector2.zero;rt.localScale=Vector3.one;}
         private static GameObject Require(string path){var go=GameObject.Find(path);if(!go)throw new System.InvalidOperationException("Required object missing: "+path);return go;}

@@ -23,17 +23,19 @@ namespace HATAGONG.Phase2
         private bool _isPrepared;
         private bool _isReleased;
         private bool _visualRecoveryRequired;
+        private int _nextStrokeId;
 
         public Phase2PaintOrchestrator(
             Phase2PaintConfig config,
             int renderResolution = Phase2PaintMaskRenderer.DefaultResolution,
-            int historyCapacity = DefaultHistoryCapacity)
+            int historyCapacity = DefaultHistoryCapacity,
+            int? chemicalSeed = null)
         {
             _config = config ?? throw new ArgumentNullException(nameof(config));
             if (renderResolution <= 0) throw new ArgumentOutOfRangeException(nameof(renderResolution));
             if (historyCapacity < 0) throw new ArgumentOutOfRangeException(nameof(historyCapacity));
             _renderResolution = renderResolution;
-            _session = new Phase2PaintSessionModel(config);
+            _session = new Phase2PaintSessionModel(config, chemicalSeed);
             _renderer = new Phase2PaintMaskRenderer();
             _interpolator = new Phase2StampInterpolator();
             _interpolatedPoints = new List<(float u, float v)>(128);
@@ -51,10 +53,23 @@ namespace HATAGONG.Phase2
         public UnityEngine.Experimental.Rendering.GraphicsFormat MaskFormat => _renderer.SelectedFormat;
         public bool RendererInitialized => _renderer.IsInitialized;
         public int OwnedRenderTextureCount => _renderer.OwnedRenderTextureCount;
+        public int VisualRevision => _renderer.Revision;
         public IReadOnlyList<Phase2PaintStamp> VisualHistory => _visualHistoryView;
         public int VisualHistoryCount => _visualHistory.Count;
+        public int ChemicalCellCount => _session.Grid.ChemicalCellCount;
+        public int RemainingChemicalOverlayCount => _session.Grid.RemainingChemicalOverlayCount;
+        public int UnfinishedChemicalCellCount => _session.Grid.UnfinishedChemicalCellCount;
+        public Phase2PaintGrid Grid => _session.Grid;
         public bool IsPrepared => _isPrepared && !_isReleased && _renderer.IsInitialized;
         public bool InputEnabled { get; private set; }
+
+        public void CollectUnpaintedCellIndices(List<int> destination)
+        {
+            if (destination == null) throw new ArgumentNullException(nameof(destination));
+            destination.Clear();
+            for (int i = 0; i < _session.Grid.TotalCellCount; i++)
+                if (!_session.Grid.IsPainted(i)) destination.Add(i);
+        }
 
         public bool Prepare()
         {
@@ -96,7 +111,13 @@ namespace HATAGONG.Phase2
             InputEnabled = IsPrepared && enabled;
         }
 
-        public Phase2OrchestrationResult RequestStamp(float centerU, float centerV, float radiusRatio, bool sessionPlaying)
+        public int CreateStrokeId()
+        {
+            _nextStrokeId = _nextStrokeId == int.MaxValue ? 1 : _nextStrokeId + 1;
+            return _nextStrokeId;
+        }
+
+        public Phase2OrchestrationResult RequestStamp(float centerU, float centerV, float radiusRatio, bool sessionPlaying, int strokeId = 0)
         {
             _visualBatch.Clear();
             BatchAccumulator accumulator = CreateAccumulator(1);
@@ -105,12 +126,12 @@ namespace HATAGONG.Phase2
                 return BuildResult(accumulator);
             }
 
-            ProcessStamp(new Phase2PaintStamp(centerU, centerV, radiusRatio), sessionPlaying, ref accumulator);
+            ProcessStamp(new Phase2PaintStamp(centerU, centerV, radiusRatio), sessionPlaying, strokeId == 0 ? CreateStrokeId() : strokeId, ref accumulator);
             SubmitVisualBatch(ref accumulator);
             return BuildResult(accumulator);
         }
 
-        public Phase2OrchestrationResult RequestStampBatch(IReadOnlyList<Phase2PaintStamp> stamps, bool sessionPlaying)
+        public Phase2OrchestrationResult RequestStampBatch(IReadOnlyList<Phase2PaintStamp> stamps, bool sessionPlaying, int strokeId = 0)
         {
             int inputCount = stamps?.Count ?? 0;
             _visualBatch.Clear();
@@ -131,9 +152,10 @@ namespace HATAGONG.Phase2
                 return BuildResult(accumulator);
             }
 
+            int effectiveStrokeId = strokeId == 0 ? CreateStrokeId() : strokeId;
             for (int i = 0; i < inputCount; i++)
             {
-                ProcessStamp(stamps[i], sessionPlaying, ref accumulator);
+                ProcessStamp(stamps[i], sessionPlaying, effectiveStrokeId, ref accumulator);
             }
             SubmitVisualBatch(ref accumulator);
             return BuildResult(accumulator);
@@ -145,7 +167,8 @@ namespace HATAGONG.Phase2
             float endU,
             float endV,
             float radiusRatio,
-            bool sessionPlaying)
+            bool sessionPlaying,
+            int strokeId = 0)
         {
             _visualBatch.Clear();
             _interpolatedPoints.Clear();
@@ -214,10 +237,11 @@ namespace HATAGONG.Phase2
                 return BuildResult(accumulator);
             }
 
+            int effectiveStrokeId = strokeId == 0 ? CreateStrokeId() : strokeId;
             for (int i = 0; i < inputCount; i++)
             {
                 (float u, float v) point = _interpolatedPoints[i];
-                ProcessStamp(new Phase2PaintStamp(point.u, point.v, radiusRatio), sessionPlaying, ref accumulator);
+                ProcessStamp(new Phase2PaintStamp(point.u, point.v, radiusRatio), sessionPlaying, effectiveStrokeId, ref accumulator);
             }
             SubmitVisualBatch(ref accumulator);
             return BuildResult(accumulator);
@@ -396,7 +420,7 @@ namespace HATAGONG.Phase2
             accumulator.FirstLogicRejectionReason = reason;
         }
 
-        private void ProcessStamp(Phase2PaintStamp stamp, bool sessionPlaying, ref BatchAccumulator accumulator)
+        private void ProcessStamp(Phase2PaintStamp stamp, bool sessionPlaying, int strokeId, ref BatchAccumulator accumulator)
         {
             if (!IsFinite(stamp.CenterU) || !IsFinite(stamp.CenterV) || !IsFinite(stamp.RadiusRatio) || stamp.RadiusRatio <= 0f)
             {
@@ -409,7 +433,7 @@ namespace HATAGONG.Phase2
                 return;
             }
 
-            Phase2StampResult result = _session.ApplyStamp(stamp.CenterU, stamp.CenterV, stamp.RadiusRatio, sessionPlaying, InputEnabled);
+            Phase2StampResult result = _session.ApplyStamp(stamp.CenterU, stamp.CenterV, stamp.RadiusRatio, sessionPlaying, InputEnabled, strokeId);
             accumulator.StateAfter = result.StateAfter;
             if (!result.Accepted)
             {
@@ -422,6 +446,9 @@ namespace HATAGONG.Phase2
             accumulator.PaintedCellDelta += result.NewlyPaintedCellCount;
             accumulator.ReachedMilestones |= result.ReachedMilestones;
             accumulator.ClearThresholdReached |= result.ClearThresholdReached;
+            accumulator.ChemicalOverlayRemovedCount += _session.Grid.LastOverlayRemovedCount;
+            accumulator.ChemicalBaseRemovedCount += _session.Grid.LastChemicalBaseRemovedCount;
+            accumulator.SameStrokeChemicalBaseRemovedCount += _session.Grid.LastSameStrokeBaseRemovedCount;
             _visualBatch.Add(stamp);
             _visualHistory.Add(stamp);
             accumulator.HistoryAddedCount++;
@@ -479,6 +506,11 @@ namespace HATAGONG.Phase2
                 percent,
                 accumulator.ReachedMilestones,
                 accumulator.ClearThresholdReached,
+                accumulator.ChemicalOverlayRemovedCount,
+                accumulator.ChemicalBaseRemovedCount,
+                accumulator.SameStrokeChemicalBaseRemovedCount,
+                _session.Grid.RemainingChemicalOverlayCount,
+                _session.Grid.UnfinishedChemicalCellCount,
                 accumulator.StateBefore,
                 accumulator.StateAfter,
                 accumulator.FirstLogicRejectionReason,
@@ -519,6 +551,9 @@ namespace HATAGONG.Phase2
             public int PaintedCellDelta;
             public Phase2MilestoneFlags ReachedMilestones;
             public bool ClearThresholdReached;
+            public int ChemicalOverlayRemovedCount;
+            public int ChemicalBaseRemovedCount;
+            public int SameStrokeChemicalBaseRemovedCount;
             public Phase2PaintSessionState StateBefore;
             public Phase2PaintSessionState StateAfter;
             public Phase2PaintMutationRejectionReason FirstLogicRejectionReason;
@@ -540,6 +575,11 @@ namespace HATAGONG.Phase2
             int percent,
             Phase2MilestoneFlags reachedMilestones,
             bool clearThresholdReached,
+            int chemicalOverlayRemovedCount,
+            int chemicalBaseRemovedCount,
+            int sameStrokeChemicalBaseRemovedCount,
+            int remainingChemicalOverlayCount,
+            int unfinishedChemicalCellCount,
             Phase2PaintSessionState stateBefore,
             Phase2PaintSessionState stateAfter,
             Phase2PaintMutationRejectionReason firstLogicRejectionReason,
@@ -556,6 +596,11 @@ namespace HATAGONG.Phase2
             Percent = percent;
             ReachedMilestones = reachedMilestones;
             ClearThresholdReached = clearThresholdReached;
+            ChemicalOverlayRemovedCount = chemicalOverlayRemovedCount;
+            ChemicalBaseRemovedCount = chemicalBaseRemovedCount;
+            SameStrokeChemicalBaseRemovedCount = sameStrokeChemicalBaseRemovedCount;
+            RemainingChemicalOverlayCount = remainingChemicalOverlayCount;
+            UnfinishedChemicalCellCount = unfinishedChemicalCellCount;
             StateBefore = stateBefore;
             StateAfter = stateAfter;
             FirstLogicRejectionReason = firstLogicRejectionReason;
@@ -573,6 +618,11 @@ namespace HATAGONG.Phase2
         public int Percent { get; }
         public Phase2MilestoneFlags ReachedMilestones { get; }
         public bool ClearThresholdReached { get; }
+        public int ChemicalOverlayRemovedCount { get; }
+        public int ChemicalBaseRemovedCount { get; }
+        public int SameStrokeChemicalBaseRemovedCount { get; }
+        public int RemainingChemicalOverlayCount { get; }
+        public int UnfinishedChemicalCellCount { get; }
         public Phase2PaintSessionState StateBefore { get; }
         public Phase2PaintSessionState StateAfter { get; }
         public Phase2PaintMutationRejectionReason FirstLogicRejectionReason { get; }

@@ -58,8 +58,8 @@ namespace HATAGONG.Outgame
             return selection != null && context.HasSelectedRequest && selection.OfferSnapshot != null &&
                 selection.RequestId == context.RequestId && selection.Difficulty == context.Difficulty &&
                 selection.RequestType == context.RequestType && selection.PermanentSeed == context.PermanentSeed &&
-                selection.Phase1Seed == context.Phase1Seed && selection.Phase2Seed == context.Phase2Seed &&
-                selection.Phase3Seed == context.Phase3Seed;
+                selection.Phase1Seed == context.Phase1Seed && selection.Phase3Seed == context.Phase3Seed &&
+                selection.Phase3ImageKey == context.Phase3ImageKey && context.HasSameEffects(selection.EffectIds);
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]

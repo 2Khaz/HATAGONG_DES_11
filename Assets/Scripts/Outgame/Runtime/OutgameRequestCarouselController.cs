@@ -21,9 +21,10 @@ namespace HATAGONG.Outgame
         private float dragStartPointerX;
         private int dragStartPage;
 
-        private const float CardWidthRatio = 0.90f;
-        private const float CardHeightLimitRatio = 0.90f;
-        private const float CardAspectRatio = 1442f / 1038f;
+        private const float CardWidthRatio = 0.88f;
+        private const float CardHeightLimitRatio = 0.80f;
+        private const float CardAspectRatio = 1512f / 1015f;
+        private const float CardVerticalOffsetRatio = 0.045f;
 
         public int CurrentPage { get; private set; }
         public int CurrentPageIndex => CurrentPage;
@@ -89,6 +90,7 @@ namespace HATAGONG.Outgame
             content.anchorMax = new Vector2(0f, 1f);
             content.pivot = new Vector2(0f, 0.5f);
             content.sizeDelta = new Vector2(pageWidth * pageCount, 0f);
+            content.anchoredPosition = new Vector2(content.anchoredPosition.x, viewportHeight * CardVerticalOffsetRatio);
             LayoutRebuilder.ForceRebuildLayoutImmediate(content);
         }
 

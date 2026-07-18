@@ -1,5 +1,63 @@
-RequestId,Enabled,RequestType,Difficulty,PermanentSeed,RequesterName,PortraitKey,Title,Description,Effect1Id,Effect2Id,Effect3Id
-REQ-N-EASY-001,TRUE,Normal,Easy,110001,김하늘,portrait_client_01,첫 번째 임시 의뢰,임시 기획 데이터입니다.\n효과가 없는 쉬운 의뢰입니다.,,,
-REQ-N-NORMAL-002,TRUE,Normal,Normal,220002,박구름,portrait_client_02,집중이 필요한 임시 의뢰,"임시 기획 데이터, ""집중"" 효과를 사용하는 보통 의뢰입니다.",EFFECT_FOCUS,,
-REQ-S-HARD-003,TRUE,Sudden,Hard,330003,이노을,portrait_client_03,긴급한 고난도 임시 의뢰,임시 기획 데이터입니다.\n두 가지 효과를 함께 참조합니다.,EFFECT_FOCUS,EFFECT_RUSH,
-REQ-S-NORMAL-004,TRUE,Sudden,Normal,440004,최새벽,portrait_client_04,복합 조건 임시 의뢰,임시 기획 데이터입니다.\n세 가지 효과를 참조하며 실제 인게임 효과는 적용하지 않습니다.,EFFECT_FOCUS,EFFECT_RUSH,EFFECT_BONUS
+﻿RequestId,Enabled,RequestType,Difficulty,PermanentSeed,Phase1Seed,Phase3Seed,Phase3ImageKey,RequesterName,PortraitKey,Title,Description,Effect1Id,Effect2Id,Effect3Id
+REQ-N-EASY-001,TRUE,Normal,Easy,110001,376912444,598234085,Img_bigtiles1,김하늘,Img_portrait_quest3,일반집 타일 공사,"집의 타일이 심하게 파손됐어요.
+교체할 타일도 없고 보수 방법도 몰라서 곤란한 상황입니다.
+가능한 한 빠르게 수리해 주세요.",,,
+REQ-N-EASY-002,TRUE,Normal,Easy,220002,1752164459,416132997,Img_bigtiles1,박하은,Img_portrait_quest5,화장실 타일 공사,"화장실에서 작업하던 중 타일 여러 장이 파손됐어요.
+더 망가지기 전에 깔끔하게 수리해 주세요.",,,
+REQ-N-EASY-003,TRUE,Normal,Easy,330003,1823352720,1429957243,Img_bigtiles1,한시우,Img_portrait_quest3,아파트 배란다 타일공사,"아파트 베란다에 무거운 물건을 오래 올려두었더니 타일이 깨지고 손상됐어요.
+안전하게 사용할 수 있도록 수리를 부탁드려요.",,,
+REQ-N-NORMAL-004,TRUE,Normal,Normal,440004,520042979,1402940937,Img_bigtiles1,김민재,Img_portrait_quest7,식당 타일공사,"식당 타일이 오래되어 전체적으로 낡아 보입니다.
+기존 타일을 철거하고 깔끔한 새 타일로 교체할 수 있을까요?",,,
+REQ-N-NORMAL-005,TRUE,Normal,Normal,2145244041,1623146869,1838936318,Img_bigtiles3,임소연,Img_portrait_quest4,식당 주방 타일공사,식당 주방 타일을 위생적이고 튼튼한 자재로 교체하고 싶습니다.,,,
+REQ-N-EASY-006,TRUE,Normal,Easy,1537690138,680790621,458468921,Img_bigtiles1,오지민,Img_portrait_quest2,상가 화장실 타일공사,"유동 인구가 많고 물을 자주 사용하는 상가 화장실입니다.
+미끄럽지 않고 관리하기 편하도록 안전하고 깔끔하게 시공해 주세요.",,,
+REQ-N-NORMAL-007,TRUE,Normal,Normal,1055640893,963088999,1712401712,Img_bigtiles1,권성민,Img_portrait_quest1,아파트 복도 타일 공사,"아파트 복도 타일 공사를 요청합니다.
+통행이 많은 공간이므로 안전하고 깔끔하게 시공해 주세요.",,,
+REQ-N-EASY-008,TRUE,Normal,Easy,2096858808,1879519580,2110662459,Img_bigtiles2,배중호,Img_portrait_quest7,상가 도로 타일 보수 공사,"상가 인근 보도 타일이 파손되어 보수 공사를 요청합니다.
+차량과 보행자 통행이 많으므로 내구성이 좋은 자재를 사용해 주세요.",,,
+REQ-N-NORMAL-009,TRUE,Normal,Normal,307210871,408409700,1364796392,Img_bigtiles2,나현우,Img_portrait_quest1,지하철역 인근 도로 타일 공사,"지하철역 인근 보도 타일 공사를 요청합니다.
+유동 인구가 매우 많은 구간이므로 튼튼하고 안전하게 시공해 주세요.",,,
+REQ-N-NORMAL-010,TRUE,Normal,Normal,361607115,15798484,1946088632,Img_bigtiles2,손채린,Img_portrait_quest5,아파트 인근 도로 타일 공사,"아파트 인근 보도 타일이 낡아 공사를 요청합니다.
+입주민과 어린이의 통행이 많으므로 안전성과 내구성을 우선해 주세요.",,,
+REQ-N-NORMAL-011,TRUE,Normal,Normal,935968192,1331582944,2098225068,Img_bigtiles2,진서준,Img_portrait_quest1,건물 외벽 타일 공사,"건물 외벽 타일 공사를 요청합니다.
+고층 작업이 필요한 만큼 외관을 깔끔하게 정비해주시고,
+타일 낙하 위험이 없도록 안전하고 꼼꼼하게 시공해 주세요.",,,
+REQ-N-EASY-012,TRUE,Normal,Easy,1553904893,1154635425,1570726588,Img_bigtiles3,황도윤,Img_portrait_quest3,병원 타일 공사,"병원 내부 타일 공사를 요청합니다.
+내구성이 좋고 위생 관리가 편한 자재를 사용해 깔끔하게 시공해 주세요.",,,
+REQ-N-NORMAL-013,TRUE,Normal,Normal,1609507204,813106750,610196928,Img_bigtiles1,이범배,Img_portrait_quest6,카페 타일 공사,"카페 타일 공사를 요청합니다.
+내구성이 좋고 청소와 위생 관리가 편한 자재로 시공해 주세요.",,,
+REQ-N-NORMAL-014,TRUE,Normal,Normal,622116379,1919887021,1590178070,Img_bigtiles1,장채원,Img_portrait_quest4,학교 타일 공사,"학교 내 타일 공사를 요청합니다.
+학생들이 안전하게 이용할 수 있도록 튼튼하고 관리하기 편한 타일로 시공해 주세요. ",,,
+REQ-N-EASY-015,TRUE,Normal,Easy,1123318837,1892270872,1247475740,Img_bigtiles2,김하은,Img_portrait_quest2,주차장 바닥 타일 공사,"주차장 바닥 타일 공사를 요청합니다.
+차량 통행을 견딜 수 있는 내구성 높은 자재를 사용하고,
+미끄럼 방지 및 오염 관리도 수월하도록 시공해 주세요. ",,,
+REQ-N-EASY-016,TRUE,Normal,Easy,787575145,1720853212,1813397395,Img_bigtiles2,이수빈,Img_portrait_quest5,공원 보도 타일 공사,"공원 보도 타일 공사를 요청합니다.
+보행자가 많은 구간이므로 안전하고 내구성이 좋은 타일로 시공해 주세요.",,,
+REQ-N-NORMAL-017,TRUE,Normal,Normal,1790966908,1594896044,177561983,Img_bigtiles3,김서준,Img_portrait_quest3,대형마트 타일 공사,"대형마트 내부 타일 공사를 요청합니다.
+통행량이 많은 공간인 만큼 안전하고 튼튼한 자재로 시공해 주세요. ",,,
+REQ-N-EASY-018,TRUE,Normal,Easy,1916616135,1527578926,1946589121,Img_bigtiles3,김민주,Img_portrait_quest2,체육관 바닥 타일 공사,"체육관 바닥 타일 공사를 요청합니다.
+많은 이용객과 반복적인 충격을 견딜 수 있도록 내구성이 강하고 표면이 고른 타일로 시공해 주세요. ",,,
+REQ-N-EASY-019,TRUE,Normal,Easy,434857565,1596640438,1469655363,Img_bigtiles1,이지애,Img_portrait_quest4,학교 교실 타일 공사,"학교 교실 바닥 타일 공사를 요청합니다.
+학생들이 안전하게 생활할 수 있도록 안정적이고 내구성이 강한 자재로 시공해 주세요. ",,,
+REQ-N-NORMAL-020,TRUE,Normal,Normal,2052932415,1249652145,1403720817,Img_bigtiles3,김유진,Img_portrait_quest5,호텔 507호 욕실 타일 공사,"호텔 507호 욕실 타일 보수 공사를 요청합니다.
+습기와 반복 사용에 강한 타일로 깔끔하게 시공해 주시고, 객실 운영을 위해 가능한 한 빠르게 작업해 주세요.",,,
+REQ-S-HARD-001,TRUE,Sudden,Hard,1636028028,2053347335,312559730,Img_bigtiles3,김영수,Img_portrait_quest6,부자집 타일공사,"고급 주택의 타일 공사를 요청합니다.
+고가의 대리석과 고급 자재를 다뤄본 경험이 있으며, 작은 오차 없이 완벽하게 마감할 수 있는 전문가를 원합니다.",EFFECT_SUPER,EFFECT_SLIPPERY,
+REQ-S-HARD-002,TRUE,Sudden,Hard,412212194,87314142,1690432938,Img_bigtiles3,김민수,Img_portrait_quest1,정부 청사 타일 공사,"정부 청사 타일 공사를 요청합니다.
+공공기관 규격에 맞는 자재 사용과 철저한 시공 기준 준수가 필요합니다. 통행량이 많으므로 내구성과 미끄럼 방지 성능도 중요합니다.",EFFECT_HARD,EFFECT_SLIPPERY,
+REQ-S-NORMAL-003,TRUE,Sudden,Normal,1605943698,754378536,1517543605,Img_bigtiles3,박지훈,Img_portrait_quest7,연구실 타일 보수 공사,"연구실 타일 보수 공사를 요청합니다.
+정밀 장비와 화학물질을 사용하는 공간이므로 내화학성과 내구성이 뛰어나고, 단차 없이 깔끔한 시공이 필요합니다. ",EFFECT_CHEMICAL,EFFECT_NOITEM,EFFECT_SLIPPERY
+REQ-S-HARD-004,TRUE,Sudden,Hard,219105362,246297125,214470415,Img_bigtiles2,최도윤,Img_portrait_quest1,대공원 타일 공사,"대공원 보도 타일 공사를 요청합니다.
+야외 환경에 노출되는 만큼 눈과 비에 강하고, 내구성과 미끄럼 방지 성능이 뛰어난 시공이 필요합니다. ",EFFECT_HARD,EFFECT_SLIPPERY,
+REQ-S-NORMAL-005,TRUE,Sudden,Normal,34186767,1583834207,138976913,Img_bigtiles2,강민재,Img_portrait_quest3,시청 타일 보수공사,"시청 건물의 타일 보수 공사를 요청합니다.
+공공시설 시공 기준을 철저히 준수하고, 내구성과 미끄럼 방지 성능을 갖춘 깔끔한 마감이 필요합니다. ",EFFECT_HARD,EFFECT_SLIPPERY,EFFECT_TIMEDOWN
+REQ-S-NORMAL-006,TRUE,Sudden,Normal,448376041,837486045,757628084,Img_bigtiles2,이지아,Img_portrait_quest2,구청 타일 보수공사,"구청 건물의 타일 보수 공사를 요청합니다.
+안전 기준을 철저히 지키고, 내구성과 미끄럼 방지 성능이 우수하도록 깔끔하게 시공해 주세요. ",EFFECT_HARD,EFFECT_SLIPPERY,EFFECT_TIMEDOWN
+REQ-S-HARD-007,TRUE,Sudden,Hard,1797588638,1585523321,1433028075,Img_bigtiles2,강다은,Img_portrait_quest5,시청 광장 타일 공사,"시청 광장 타일 공사를 요청합니다.
+많은 시민과 행사 차량의 통행을 견딜 수 있는 높은 내구성과 확실한 미끄럼 방지 시공이 필요합니다. ",EFFECT_HARD,EFFECT_SLIPPERY,EFFECT_TIMEDOWN
+REQ-S-NORMAL-008,TRUE,Sudden,Normal,904460054,2075042256,2084116653,Img_bigtiles3,오한나,Img_portrait_quest4,백화점 타일보수 공사,"백화점 내부 타일 보수 공사를 요청합니다.
+방문객과 운반 장비의 통행이 많으므로 내구성이 높고 미끄럽지 않도록 시공해 주세요. ",EFFECT_HARD,EFFECT_SLIPPERY,EFFECT_TIMEDOWN
+REQ-S-HARD-009,TRUE,Sudden,Hard,13977830,383497430,290997845,Img_bigtiles3,문태성,Img_portrait_quest7,공항 대합실 타일 공사,"공항 대합실 타일 공사를 요청합니다.
+여행객과 수하물 카트의 통행이 매우 많으므로 충격과 마모에 강하고 미끄럽지 않은 시공이 필요합니다. ",EFFECT_HARD,EFFECT_SLIPPERY,EFFECT_FATIGUE
+REQ-S-HARD-010,TRUE,Sudden,Hard,2071129311,255987861,1599705339,Img_bigtiles3,노은지,Img_portrait_quest2,박물관 타일 공사,"박물관 내부 타일 공사를 요청합니다.
+전시품에 영향을 주지 않도록 먼지와 소음을 최소화하고, 기존 공간과 잘 어울리는 정교한 마감이 필요합니다. ",EFFECT_FATIGUE,EFFECT_NOITEM,EFFECT_TIMEDOWN

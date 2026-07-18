@@ -8,6 +8,7 @@ namespace HATAGONG.Phase1
     {
         private Image image;
         private Coroutine playback;
+        private Color playbackColor = Color.white;
 
         public bool IsPlaying { get; private set; }
         public long StartedOrder { get; private set; }
@@ -20,15 +21,16 @@ namespace HATAGONG.Phase1
             gameObject.SetActive(false);
         }
 
-        public void Play(Vector2 localPosition, Sprite[] frames, long startedOrder)
+        public void Play(Vector2 localPosition, Sprite[] frames, long startedOrder, Color color)
         {
             StopAndHide();
             StartedOrder = startedOrder;
+            playbackColor = color;
             RectTransform rect = (RectTransform)transform;
             rect.anchoredPosition = localPosition;
             rect.localRotation = Quaternion.identity;
             rect.localScale = Vector3.one;
-            image.color = Color.white;
+            image.color = playbackColor;
             IsPlaying = true;
             gameObject.SetActive(true);
             playback = StartCoroutine(PlayRoutine(frames));
@@ -39,6 +41,7 @@ namespace HATAGONG.Phase1
             if (playback != null) StopCoroutine(playback);
             playback = null;
             IsPlaying = false;
+            playbackColor = Color.white;
             if (image) image.color = Color.white;
             if (gameObject.activeSelf) gameObject.SetActive(false);
         }
@@ -64,13 +67,15 @@ namespace HATAGONG.Phase1
 
             playback = null;
             IsPlaying = false;
+            playbackColor = Color.white;
+            image.color = Color.white;
             gameObject.SetActive(false);
         }
 
         private void SetFrame(Sprite sprite)
         {
             image.sprite = sprite;
-            image.color = Color.white;
+            image.color = playbackColor;
         }
 
         private static IEnumerator WaitUnscaled(float duration)

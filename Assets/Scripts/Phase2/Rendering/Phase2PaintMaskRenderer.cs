@@ -41,6 +41,7 @@ namespace HATAGONG.Phase2.Rendering
         public GraphicsFormat SelectedFormat => _graphicsFormat;
         public bool IsInitialized => ResourcesAreValid();
         public int OwnedRenderTextureCount => IsInitialized ? 3 : 0;
+        public int Revision { get; private set; }
 
         public static bool SupportsR8Mask()
         {
@@ -159,6 +160,7 @@ namespace HATAGONG.Phase2.Rendering
             RenderTexture previousMask = _mask;
             _mask = _scratch;
             _scratch = previousMask;
+            Revision++;
             return new Phase2PaintBatchResult(inputCount, acceptedCount, rejectedCount, true);
         }
 
@@ -174,6 +176,7 @@ namespace HATAGONG.Phase2.Rendering
             ClearRenderTexture(_scratch);
             ClearRenderTexture(_frameStamp);
             ExecuteAndRestoreActiveRenderTexture();
+            Revision++;
         }
 
         public void Release()
@@ -192,6 +195,7 @@ namespace HATAGONG.Phase2.Rendering
             _compositeMaterial = null;
             _resolution = 0;
             _graphicsFormat = GraphicsFormat.None;
+            Revision = 0;
             _vertices.Clear();
             _brushCoordinates.Clear();
             _indices.Clear();

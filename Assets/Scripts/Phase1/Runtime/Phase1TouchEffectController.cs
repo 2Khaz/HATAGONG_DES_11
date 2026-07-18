@@ -31,7 +31,9 @@ namespace HATAGONG.Phase1
             BuildPool();
         }
 
-        public bool Play(Vector2 screenPosition, Camera eventCamera)
+        public bool Play(Vector2 screenPosition, Camera eventCamera) => Play(screenPosition, eventCamera, Color.white);
+
+        public bool Play(Vector2 screenPosition, Camera eventCamera, Color color)
         {
             if (!isActiveAndEnabled || pool.Count != PoolSize) return false;
             if (!RectTransformUtility.RectangleContainsScreenPoint(layer, screenPosition, eventCamera)) return false;
@@ -39,7 +41,19 @@ namespace HATAGONG.Phase1
 
             Phase1TouchEffectView view = SelectView();
             view.transform.SetAsLastSibling();
-            view.Play(localPosition, frames, ++playOrder);
+            view.Play(localPosition, frames, ++playOrder, color);
+            return true;
+        }
+
+        public bool PlayAtWorldPosition(Vector3 worldPosition, Color color)
+        {
+            if (!isActiveAndEnabled || pool.Count != PoolSize) return false;
+            Vector2 localPosition = layer.InverseTransformPoint(worldPosition);
+            if (!layer.rect.Contains(localPosition)) return false;
+
+            Phase1TouchEffectView view = SelectView();
+            view.transform.SetAsLastSibling();
+            view.Play(localPosition, frames, ++playOrder, color);
             return true;
         }
 

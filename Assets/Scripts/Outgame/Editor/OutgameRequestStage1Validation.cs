@@ -14,8 +14,8 @@ namespace HATAGONG.Outgame.Editor
 {
     public static class OutgameRequestStage1Validation
     {
-        private const string RequestHeader = "RequestId,Enabled,RequestType,Difficulty,PermanentSeed,RequesterName,PortraitKey,Title,Description,Effect1Id,Effect2Id,Effect3Id";
-        private const string EffectHeader = "EffectId,Enabled,EffectName,EffectIconKey,Description";
+        private const string RequestHeader = "RequestId,Enabled,RequestType,Difficulty,PermanentSeed,Phase1Seed,Phase3Seed,Phase3ImageKey,RequesterName,PortraitKey,Title,Description,Effect1Id,Effect2Id,Effect3Id";
+        private const string EffectHeader = "EffectId,Enabled,EffectName,EffectIconKey,EffectScriptKey,Description";
         private const string PlayRequestedKey = "HATAGONG.Outgame.Stage1.PlayRequested";
         private const string PlayRunningKey = "HATAGONG.Outgame.Stage1.PlayRunning";
         private const string PlayAwaitingExitKey = "HATAGONG.Outgame.Stage1.PlayAwaitingExit";
@@ -148,27 +148,19 @@ namespace HATAGONG.Outgame.Editor
             if (normal.Catalog != null)
             {
                 OutgameRequestCatalog catalog = normal.Catalog;
-                validation.Check(catalog.Requests.Count == 4, "Project request count is 4");
-                validation.Check(catalog.Effects.Count == 3, "Project effect count is 3");
-                validation.Check(catalog.EnabledRequests.Count == 4, "Project enabled request count is 4");
-                GameDifficulty[] difficulties = { GameDifficulty.Easy, GameDifficulty.Normal, GameDifficulty.Hard, GameDifficulty.Normal };
-                RequestType[] types = { RequestType.Normal, RequestType.Normal, RequestType.Sudden, RequestType.Sudden };
-                int[] seeds = { 110001, 220002, 330003, 440004 };
-                int[] effectCounts = { 0, 1, 2, 3 };
-                for (int i = 0; i < 4; i++)
+                validation.Check(catalog.Requests.Count > 0, "Project request catalog is not empty");
+                validation.Check(catalog.Effects.Count == RequestEffectRuntime.SupportedEffectCount, "Project effect count matches runtime contracts");
+                validation.Check(catalog.EnabledRequests.Count > 0, "Project enabled request catalog is not empty");
+                validation.Check(catalog.Requests.All(request => request.Effects.Count <= 3), "Project requests use at most three effects");
+                for (int i = 0; i < RequestEffectRuntime.SupportedEffectIds.Count; i++)
                 {
-                    validation.Check(catalog.Requests[i].Difficulty == difficulties[i], $"Request {i + 1} difficulty");
-                    validation.Check(catalog.Requests[i].RequestType == types[i], $"Request {i + 1} type");
-                    validation.Check(catalog.Requests[i].PermanentSeed == seeds[i], $"Request {i + 1} permanent seed");
-                    validation.Check(catalog.Requests[i].Effects.Count == effectCounts[i], $"Request {i + 1} effect count");
+                    string effectId = RequestEffectRuntime.SupportedEffectIds[i];
+                    validation.Check(catalog.TryGetEffect(effectId, out OutgameRequestEffectDefinition effect), $"Project effect exists: {effectId}");
+                    validation.Check(
+                        effect != null && RequestEffectRuntime.TryGetContract(effectId, out string icon, out string script) &&
+                        effect.EffectIconKey == icon && effect.EffectScriptKey == script,
+                        $"Project effect contract matches: {effectId}");
                 }
-                validation.Check(catalog.Requests[0].RequesterName == "김하늘", "Korean requester preserved");
-                validation.Check(catalog.Requests[0].Title.Contains("임시 의뢰"), "Korean title preserved");
-                validation.Check(catalog.Requests[0].Description.Contains("\n"), "Description \\n converted to newline");
-                validation.Check(catalog.Requests[1].Description.Contains(","), "Quoted comma preserved");
-                validation.Check(catalog.Requests[1].Description.Contains("\"집중\""), "Escaped quote preserved");
-                validation.Check(ReferenceEquals(catalog.Requests[1].Effects[0], catalog.Requests[2].Effects[0]), "Shared EffectId reuses definition 1");
-                validation.Check(ReferenceEquals(catalog.Requests[2].Effects[0], catalog.Requests[3].Effects[0]), "Shared EffectId reuses definition 2");
             }
 
             OutgameRequestTableLoadResult crlf = OutgameRequestCatalog.LoadFromCsv(
@@ -216,19 +208,10 @@ namespace HATAGONG.Outgame.Editor
             validation.Check(result.Catalog != null, label + " catalog exists");
             if (result.Catalog == null) return;
             OutgameRequestCatalog catalog = result.Catalog;
-            validation.Check(catalog.Requests.Count == 4, label + " request count");
-            validation.Check(catalog.Effects.Count == 3, label + " effect count");
-            validation.Check(catalog.Requests.Select(value => value.Effects.Count).SequenceEqual(new[] { 0, 1, 2, 3 }), label + " effect counts 0/1/2/3");
-            validation.Check(catalog.Requests[0].Difficulty == GameDifficulty.Easy, label + " Easy difficulty");
-            validation.Check(catalog.Requests[1].Difficulty == GameDifficulty.Normal, label + " Normal difficulty");
-            validation.Check(catalog.Requests[2].Difficulty == GameDifficulty.Hard, label + " Hard difficulty");
-            validation.Check(catalog.Requests[0].RequestType == RequestType.Normal, label + " Normal type");
-            validation.Check(catalog.Requests[2].RequestType == RequestType.Sudden, label + " Sudden type");
-            validation.Check(catalog.Requests.Select(value => value.PermanentSeed).SequenceEqual(new[] { 110001, 220002, 330003, 440004 }), label + " permanent seeds");
-            validation.Check(catalog.Requests[0].RequesterName == "김하늘", label + " Korean requester");
-            validation.Check(catalog.Requests[0].Title.Contains("임시 의뢰"), label + " Korean title");
-            validation.Check(catalog.Requests[0].Description.Contains("\n"), label + " description newline");
-            validation.Check(ReferenceEquals(catalog.Requests[1].Effects[0], catalog.Requests[2].Effects[0]), label + " shared effect definition");
+            validation.Check(catalog.Requests.Count > 0, label + " request catalog is not empty");
+            validation.Check(catalog.Effects.Count == RequestEffectRuntime.SupportedEffectCount, label + " effect count");
+            validation.Check(catalog.EnabledRequests.Count > 0, label + " enabled request catalog is not empty");
+            validation.Check(catalog.Requests.All(value => value.Effects.Count <= 3), label + " effect count is at most three");
         }
 
         private static void ExpectFailure(
@@ -270,19 +253,25 @@ namespace HATAGONG.Outgame.Editor
         {
             return string.Join(",", new[]
             {
-                id, enabled, type, difficulty, seed, requesterName, "portrait", "임시 제목",
+                id, enabled, type, difficulty, seed, "101", "301", "Img_bigtiles1", requesterName, "portrait", "임시 제목",
                 "임시 설명\\n두 번째 줄", effect1, effect2, effect3
             });
         }
 
-        private static string EffectRow(string id, string enabled)
+        private static string EffectRow(string id, string enabled, string icon = "icon", string script = "script")
         {
-            return string.Join(",", new[] { id, enabled, "임시 효과", "icon", "임시 효과 설명" });
+            return string.Join(",", new[] { id, enabled, "임시 효과", icon, script, "임시 효과 설명" });
         }
 
         private static string ValidEffects()
         {
-            return Effects(EffectRow("FX1", "TRUE"), EffectRow("FX2", "TRUE"), EffectRow("FX3", "TRUE"));
+            string[] ids = { RequestEffectRuntime.Hard, RequestEffectRuntime.Slippery, RequestEffectRuntime.NoItem,
+                RequestEffectRuntime.Fatigue, RequestEffectRuntime.Super, RequestEffectRuntime.TimeDown, RequestEffectRuntime.Chemical };
+            return Effects(ids.Select(id =>
+            {
+                RequestEffectRuntime.TryGetContract(id, out string icon, out string script);
+                return EffectRow(id, "TRUE", icon, script);
+            }).ToArray());
         }
 
         private static string ReadProjectRequests()

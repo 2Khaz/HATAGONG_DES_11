@@ -1309,6 +1309,8 @@ GameObject:
   m_Component:
   - component: {fileID: 1495084516}
   - component: {fileID: 1495084517}
+  - component: {fileID: 1495084518}
+  - component: {fileID: 1495084519}
   m_Layer: 5
   m_Name: Outgame_UI_General
   m_TagString: Untagged
@@ -1355,6 +1357,40 @@ MonoBehaviour:
   dimButton: {fileID: 1070185540}
   popupView: {fileID: 93768436}
   carouselController: {fileID: 1566457030}
+--- !u!114 &1495084518
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1495084515}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bd6151cfcd044405ae1a6e0bfbe3923f, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::HATAGONG.Outgame.OutgameLobbyProgressQuitController
+  topUiSprite: {fileID: 21300000, guid: 6ef06d65e929e964e9c93d777c44736c, type: 3}
+  logoutIconSprite: {fileID: 21300000, guid: f43071297924b4c43bb60097a0b21cf8, type: 3}
+  logoutConfirmSprite: {fileID: 21300000, guid: 4bfa8570685a39f4788f02d52d8c7e87, type: 3}
+  lobbyFont: {fileID: 11400000, guid: 2e47d870c7ea16a409eb9416dc2d1dee, type: 2}
+--- !u!114 &1495084519
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1495084515}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c6a7b8d9e0f14253a4b5c6d7e8f90123, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::HATAGONG.Outgame.LobbyRequestAttentionController
+  questIndicatorButton: {fileID: 1251309757}
+  attentionGraphic: {fileID: 1251309755}
+  requestSelectionController: {fileID: 1495084517}
+  quitController: {fileID: 1495084518}
+  blockingPopupRoots:
+  - {fileID: 93768434}
 --- !u!1 &1510774754
 GameObject:
   m_ObjectHideFlags: 0

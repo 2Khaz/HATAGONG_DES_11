@@ -1,5 +1,6 @@
 using System;
 using System.Security.Cryptography;
+using HATAGONG.GameFlow;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -75,6 +76,7 @@ namespace HATAGONG.Outgame
         public void OpenPopup()
         {
             if (!IsReady || Batch == null || IsTransitionRequested) return;
+            GameSfxPlayer.Play(GameSfxId.Click);
             requestPopupLayer.SetActive(true);
             Canvas.ForceUpdateCanvases();
             carouselController.RefreshLayout();
@@ -84,6 +86,8 @@ namespace HATAGONG.Outgame
 
         public void ClosePopup()
         {
+            if (requestPopupLayer != null && requestPopupLayer.activeInHierarchy)
+                GameSfxPlayer.Play(GameSfxId.Click);
             SetAllPerformButtons(false);
             if (requestPopupLayer != null) requestPopupLayer.SetActive(false);
         }
@@ -138,8 +142,10 @@ namespace HATAGONG.Outgame
         {
             if (offer == null || IsTransitionRequested) return;
 
+            GameSfxPlayer.Play(GameSfxId.Click);
             IsTransitionRequested = true;
             OutgameRequestSelectionStore.SetPending(offer);
+            GameBgmPlayer.BeginNewIngameRequest();
             SetAllPerformButtons(false);
             if (questIndicatorButton != null) questIndicatorButton.interactable = false;
             if (dimButton != null) dimButton.interactable = false;
@@ -164,6 +170,7 @@ namespace HATAGONG.Outgame
 
         private void RestoreAfterLoadFailure()
         {
+            GameBgmPlayer.RestoreLobbyAfterRequestLoadFailure();
             OutgameRequestSelectionStore.Clear();
             IsTransitionRequested = false;
             if (questIndicatorButton != null) questIndicatorButton.interactable = IsReady;

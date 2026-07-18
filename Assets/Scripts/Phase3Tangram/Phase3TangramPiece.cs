@@ -33,6 +33,7 @@ namespace HATAGONG.Phase3Tangram
         private Material material;
         private MeshRenderer meshRenderer;
         private PolygonCollider2D polygonCollider;
+        private Sprite sourceSprite;
 
         public int Id { get; private set; }
         public IReadOnlyList<Vector2> OriginalShape { get; private set; }
@@ -49,7 +50,7 @@ namespace HATAGONG.Phase3Tangram
         public PolygonCollider2D PolygonCollider => polygonCollider;
         public int SortingOrder => meshRenderer ? meshRenderer.sortingOrder : int.MinValue;
 
-        public void Initialize(int id, IReadOnlyList<Vector2> originalShape, TangramTargetAssignment assignment, Color color, int deckPage, int deckSlot, int initialRotationStep)
+        public void Initialize(int id, IReadOnlyList<Vector2> originalShape, TangramTargetAssignment assignment, Color color, Sprite sourceSprite, int deckPage, int deckSlot, int initialRotationStep)
         {
             if (originalShape == null || originalShape.Count < 3) throw new ArgumentException("Tangram piece needs at least three vertices.", nameof(originalShape));
             Id = id;
@@ -58,24 +59,35 @@ namespace HATAGONG.Phase3Tangram
             OriginalDeckPage = deckPage;
             OriginalDeckSlotId = deckSlot;
             PieceColor = color;
+            this.sourceSprite = sourceSprite;
             State = TangramPieceState.InDeck;
             meshRenderer = GetComponent<MeshRenderer>();
             polygonCollider = GetComponent<PolygonCollider2D>();
-            material = new Material(Shader.Find("Sprites/Default")) { color = color };
+            material = new Material(Shader.Find("Sprites/Default")) { color = sourceSprite ? Color.white : color };
+            if (sourceSprite) material.mainTexture = sourceSprite.texture;
             meshRenderer.sharedMaterial = material;
             meshRenderer.sortingOrder = DeckSortingOrderBase + id;
-            GenerateMeshAndCollider();
+            GenerateMeshAndCollider(sourceSprite);
             SetRotationStep(initialRotationStep);
         }
 
-        public void GenerateMeshAndCollider()
+        public void GenerateMeshAndCollider(Sprite sourceSprite = null)
         {
             Vector2[] colliderVertices = new Vector2[OriginalShape.Count];
             Vector3[] meshVertices = new Vector3[OriginalShape.Count];
+            Vector2[] meshUvs = sourceSprite ? new Vector2[OriginalShape.Count] : null;
             for (int i = 0; i < OriginalShape.Count; i++)
             {
                 colliderVertices[i] = OriginalShape[i];
                 meshVertices[i] = new Vector3(OriginalShape[i].x, OriginalShape[i].y, 0f);
+                if (sourceSprite)
+                {
+                    Vector2 logical = OriginalShape[i] + Assignment.TargetPosition;
+                    Rect rect = sourceSprite.rect;
+                    meshUvs[i] = new Vector2(
+                        (rect.x + logical.x / Phase3TangramGenerator.BoardSize * rect.width) / sourceSprite.texture.width,
+                        (rect.y + logical.y / Phase3TangramGenerator.BoardSize * rect.height) / sourceSprite.texture.height);
+                }
             }
             polygonCollider.pathCount = 1;
             polygonCollider.SetPath(0, colliderVertices);
@@ -85,6 +97,7 @@ namespace HATAGONG.Phase3Tangram
             mesh = new Mesh { name = $"Phase3TangramPiece_{Id}_Mesh" };
             mesh.vertices = meshVertices;
             mesh.triangles = triangles;
+            if (meshUvs != null) mesh.uv = meshUvs;
             mesh.RecalculateBounds();
             GetComponent<MeshFilter>().sharedMesh = mesh;
         }
@@ -110,7 +123,11 @@ namespace HATAGONG.Phase3Tangram
             return result;
         }
 
-        public void SetAssignment(TangramTargetAssignment assignment) => Assignment = assignment ?? throw new ArgumentNullException(nameof(assignment));
+        public void SetAssignment(TangramTargetAssignment assignment)
+        {
+            Assignment = assignment ?? throw new ArgumentNullException(nameof(assignment));
+            if (sourceSprite) GenerateMeshAndCollider(sourceSprite);
+        }
 
         public void SetState(TangramPieceState state)
         {

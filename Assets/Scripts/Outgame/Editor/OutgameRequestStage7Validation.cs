@@ -36,30 +36,30 @@ namespace HATAGONG.Outgame.Editor
             validation.Check(fallback.RequestId == string.Empty, "Fallback RequestId is empty");
             validation.Check(fallback.Difficulty == GameDifficulty.Hard, "Fallback keeps Inspector difficulty");
             validation.Check(fallback.RequestType == RequestType.Sudden, "Fallback keeps Inspector request type");
-            validation.Check(fallback.PermanentSeed == 0 && fallback.Phase1Seed == 0 && fallback.Phase2Seed == 0 && fallback.Phase3Seed == 0, "Fallback has no selected seeds");
+            validation.Check(fallback.PermanentSeed == 0 && fallback.Phase1Seed == 0 && fallback.Phase3Seed == 0, "Fallback has no selected seeds");
 
-            var selected = new GameRunContext("STAGE7", GameDifficulty.Normal, RequestType.Normal, 710001, 710011, 710021, 710031);
+            var selected = new GameRunContext("STAGE7", GameDifficulty.Normal, RequestType.Normal, 710001, 710011, 710031, "Img_bigtiles1");
             validation.Check(selected.IsValid && selected.HasSelectedRequest, "Selected Context is valid");
             validation.Check(selected.RequestId == "STAGE7", "Selected RequestId is exact");
             validation.Check(selected.Difficulty == GameDifficulty.Normal, "Selected Difficulty is exact");
             validation.Check(selected.RequestType == RequestType.Normal, "Selected RequestType is exact");
             validation.Check(selected.PermanentSeed == 710001, "Selected PermanentSeed is exact");
             validation.Check(selected.Phase1Seed == 710011, "Selected Phase1Seed is exact");
-            validation.Check(selected.Phase2Seed == 710021, "Selected Phase2Seed is exact");
             validation.Check(selected.Phase3Seed == 710031, "Selected Phase3Seed is exact");
+            validation.Check(selected.Phase3ImageKey == "Img_bigtiles1", "Selected Phase3ImageKey is exact");
 
-            validation.Check(!new GameRunContext("", GameDifficulty.Normal, RequestType.Normal, 1, 2, 3, 4).IsValid, "Empty RequestId fails closed");
-            validation.Check(!new GameRunContext("X", GameDifficulty.Unspecified, RequestType.Normal, 1, 2, 3, 4).IsValid, "Invalid Difficulty fails closed");
-            validation.Check(!new GameRunContext("X", GameDifficulty.Normal, (RequestType)99, 1, 2, 3, 4).IsValid, "Invalid RequestType fails closed");
-            validation.Check(!new GameRunContext("X", GameDifficulty.Normal, RequestType.Normal, 0, 2, 3, 4).IsValid, "Invalid PermanentSeed fails closed");
-            validation.Check(!new GameRunContext("X", GameDifficulty.Normal, RequestType.Normal, 1, 0, 3, 4).IsValid, "Invalid Phase1Seed fails closed");
-            validation.Check(!new GameRunContext("X", GameDifficulty.Normal, RequestType.Normal, 1, 2, 0, 4).IsValid, "Invalid Phase2Seed fails closed");
-            validation.Check(!new GameRunContext("X", GameDifficulty.Normal, RequestType.Normal, 1, 2, 3, 0).IsValid, "Invalid Phase3Seed fails closed");
+            validation.Check(!new GameRunContext("", GameDifficulty.Normal, RequestType.Normal, 1, 2, 3, "Img_bigtiles1").IsValid, "Empty RequestId fails closed");
+            validation.Check(!new GameRunContext("X", GameDifficulty.Unspecified, RequestType.Normal, 1, 2, 3, "Img_bigtiles1").IsValid, "Invalid Difficulty fails closed");
+            validation.Check(!new GameRunContext("X", GameDifficulty.Normal, (RequestType)99, 1, 2, 3, "Img_bigtiles1").IsValid, "Invalid RequestType fails closed");
+            validation.Check(!new GameRunContext("X", GameDifficulty.Normal, RequestType.Normal, 0, 2, 3, "Img_bigtiles1").IsValid, "Invalid PermanentSeed fails closed");
+            validation.Check(!new GameRunContext("X", GameDifficulty.Normal, RequestType.Normal, 1, 0, 3, "Img_bigtiles1").IsValid, "Invalid Phase1Seed fails closed");
+            validation.Check(!new GameRunContext("X", GameDifficulty.Normal, RequestType.Normal, 1, 2, 0, "Img_bigtiles1").IsValid, "Invalid Phase3Seed fails closed");
+            validation.Check(!new GameRunContext("X", GameDifficulty.Normal, RequestType.Normal, 1, 2, 3, "").IsValid, "Missing Phase3ImageKey fails closed");
 
             OutgameRequestOffer retryOffer = CreateOffer(GameDifficulty.Normal, RequestType.Sudden, 715001);
             var retryContext = new GameRunContext(retryOffer.Definition.RequestId, retryOffer.Definition.Difficulty,
                 retryOffer.Definition.RequestType, retryOffer.Definition.PermanentSeed,
-                retryOffer.Phase1Seed, retryOffer.Phase2Seed, retryOffer.Phase3Seed);
+                retryOffer.Phase1Seed, retryOffer.Phase3Seed, retryOffer.Phase3ImageKey);
             OutgameRequestSelectionStore.SetPending(retryOffer);
             validation.Check(OutgameRequestSelectionStore.ActivatePending() && OutgameRequestSelectionStore.HasActive,
                 "Selected offer becomes active retry snapshot");
@@ -80,6 +80,7 @@ namespace HATAGONG.Outgame.Editor
             validation.Check(typeof(Phase1PhaseAdapter).GetProperty("RunContext") != null, "Phase1 preserves common Context");
             validation.Check(typeof(Phase2PhaseAdapter).GetProperty("RunContext") != null, "Phase2 preserves common Context");
             validation.Check(typeof(Phase3TangramManager).GetProperty("RunContext") != null, "Phase3 preserves common Context");
+            validation.Check(typeof(GameRunContext).GetProperty("Phase2Seed") == null, "Common Context has no Phase2Seed");
             Log("EditMode", validation);
         }
 
@@ -130,8 +131,8 @@ namespace HATAGONG.Outgame.Editor
                 validation.Check(context.RequestType == offer.Definition.RequestType, "RequestType copied exactly");
                 validation.Check(context.PermanentSeed == offer.Definition.PermanentSeed, "PermanentSeed copied exactly");
                 validation.Check(context.Phase1Seed == offer.Phase1Seed, "Phase1Seed copied exactly");
-                validation.Check(context.Phase2Seed == offer.Phase2Seed, "Phase2Seed copied exactly");
                 validation.Check(context.Phase3Seed == offer.Phase3Seed, "Phase3Seed copied exactly");
+                validation.Check(context.Phase3ImageKey == offer.Phase3ImageKey, "Phase3ImageKey copied exactly");
                 validation.Check(!OutgameRequestSelectionStore.HasPending, "Pending is cleared after Context creation");
 
                 GameRequestContext request = UnityEngine.Object.FindFirstObjectByType<GameRequestContext>();
@@ -144,10 +145,11 @@ namespace HATAGONG.Outgame.Editor
 
                 Phase2PhaseAdapter phase2 = UnityEngine.Object.FindFirstObjectByType<Phase2PhaseAdapter>(FindObjectsInactive.Include);
                 validation.Check(phase2 && phase2.Prepare(context), "Phase2 prepares from common Context");
-                validation.Check(phase2 && phase2.RunContext.Phase2Seed == context.Phase2Seed, "Phase2 preserves selected seed");
+                validation.Check(phase2 && phase2.RunContext.RequestId == context.RequestId, "Phase2 preserves common Context identity");
                 Phase3TangramManager phase3 = UnityEngine.Object.FindFirstObjectByType<Phase3TangramManager>(FindObjectsInactive.Include);
                 validation.Check(phase3 && phase3.Prepare(context), "Phase3 prepares from common Context");
                 validation.Check(phase3 && phase3.ActiveSeed == context.Phase3Seed, "Phase3 uses selected seed exactly");
+                validation.Check(phase3 && phase3.ActiveImageKey == context.Phase3ImageKey, "Phase3 uses selected image key exactly");
                 validation.Check(phase3 && phase3.RunContext.RequestType == context.RequestType, "Phase3 preserves RequestType");
 
                 await ValidatePhase1Replay(validation, offer, phase1Signature);
@@ -195,7 +197,7 @@ namespace HATAGONG.Outgame.Editor
             GameRunContext context = session != null ? session.RunContext : default;
             validation.Check(session && context.HasSelectedRequest && context.Difficulty == difficulty, label + " Context difficulty");
             validation.Check(context.RequestType == requestType && context.RequestId == offer.Definition.RequestId, label + " Context request identity");
-            validation.Check(context.Phase1Seed == offer.Phase1Seed && context.Phase2Seed == offer.Phase2Seed && context.Phase3Seed == offer.Phase3Seed, label + " Context seeds");
+            validation.Check(context.Phase1Seed == offer.Phase1Seed && context.Phase3Seed == offer.Phase3Seed && context.Phase3ImageKey == offer.Phase3ImageKey, label + " Context image and seeds");
             validation.Check(!OutgameRequestSelectionStore.HasPending, label + " Pending consumed");
 
             GameRequestContext request = UnityEngine.Object.FindFirstObjectByType<GameRequestContext>();
@@ -219,7 +221,7 @@ namespace HATAGONG.Outgame.Editor
             validation.Check(session && context.IsValid && !context.HasSelectedRequest, "Direct INGAME uses fallback Context");
             validation.Check(context.Difficulty == GameDifficulty.Hard, "Direct INGAME keeps Inspector difficulty");
             validation.Check(context.RequestType == RequestType.Normal, "Direct INGAME keeps Request Context fallback");
-            validation.Check(context.Phase1Seed == 0 && context.Phase2Seed == 0 && context.Phase3Seed == 0, "Direct INGAME has no selected seeds");
+            validation.Check(context.Phase1Seed == 0 && context.Phase3Seed == 0 && context.Phase3ImageKey == string.Empty, "Direct INGAME has no selected image or seeds");
             validation.Check(!OutgameRequestSelectionStore.HasPending, "Direct INGAME does not create Pending");
 
             Phase1PhaseAdapter phase1 = UnityEngine.Object.FindFirstObjectByType<Phase1PhaseAdapter>(FindObjectsInactive.Include);
@@ -232,6 +234,7 @@ namespace HATAGONG.Outgame.Editor
         private static OutgameRequestOffer CreateOffer(GameDifficulty difficulty, RequestType requestType, int permanentSeed)
         {
             var definition = new OutgameRequestDefinition("STAGE7_PLAY", true, requestType, difficulty, permanentSeed,
+                permanentSeed + 10, permanentSeed + 30, "Img_bigtiles1",
                 "Fixture", "fixture", "Fixture", "Fixture", Array.Empty<OutgameRequestEffectDefinition>());
             ConstructorInfo constructor = typeof(OutgameRequestCatalog).GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic,
                 null, new[] { typeof(IEnumerable<OutgameRequestDefinition>), typeof(IEnumerable<OutgameRequestEffectDefinition>) }, null);

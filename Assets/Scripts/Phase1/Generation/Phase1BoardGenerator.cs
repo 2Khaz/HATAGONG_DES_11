@@ -25,6 +25,14 @@ namespace HATAGONG.Phase1
             var assigner=new Phase1GradeAssigner(config);
             var gradeRandom=new Random(DeriveGradeSeed(seed,bag.Id,difficulty));
             if(!assigner.TryAssign(difficulty,state.Tiles,gradeRandom,out _)){state=null;return false;}
+            foreach(var tile in state.Tiles)
+            {
+                int unbalancedHp=tile.BaseHp+tile.GradeHpModifier;
+                int balancedHp=HATAGONG.GameFlow.RequestEffectRuntime.BalancePhase1Hp(unbalancedHp);
+                tile.BalanceHpModifier=balancedHp-unbalancedHp;
+                tile.MaxHp=balancedHp;
+                tile.MinimumHpValid=tile.MaxHp>=config.MinimumFinalTileHp;
+            }
             LastGradeFallbackCount=assigner.LastFallbackCount;
             foreach(var pair in assigner.LastFallbackGrades)lastFallbackGrades[pair.Key]=pair.Value;
             LastPreOptimizationScore=assigner.LastPreOptimizationScore;

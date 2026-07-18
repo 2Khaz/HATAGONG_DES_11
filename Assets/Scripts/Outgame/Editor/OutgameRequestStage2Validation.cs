@@ -236,10 +236,10 @@ namespace HATAGONG.Outgame.Editor
                     2048,
                     firstIndex);
                 validation.Check(first != null, definition.RequestId + " appears in a batch");
-                validation.Check(first != null && first.Phase1Seed > 0 && first.Phase2Seed > 0 && first.Phase3Seed > 0,
+                validation.Check(first != null && first.Phase1Seed > 0 && first.Phase3Seed > 0,
                     definition.RequestId + " phase seeds are positive and nonzero");
-                validation.Check(first != null && new[] { first.Phase1Seed, first.Phase2Seed, first.Phase3Seed }.Distinct().Count() == 3,
-                    definition.RequestId + " phase seeds are pairwise unique");
+                validation.Check(first != null && first.Phase1Seed == definition.Phase1Seed && first.Phase3Seed == definition.Phase3Seed,
+                    definition.RequestId + " phase seeds come directly from CSV definition");
                 validation.Check(first != null && ReferenceEquals(first.Definition, definition),
                     definition.RequestId + " offer owns the original definition reference");
                 validation.Check(definition.PermanentSeed == permanentBefore[definitionIndex],
@@ -272,8 +272,10 @@ namespace HATAGONG.Outgame.Editor
                 "Offer Definition is get-only");
             validation.Check(typeof(OutgameRequestOffer).GetProperty(nameof(OutgameRequestOffer.Phase1Seed)).SetMethod == null,
                 "Offer Phase1Seed is get-only");
-            validation.Check(typeof(OutgameRequestOffer).GetProperty(nameof(OutgameRequestOffer.Phase2Seed)).SetMethod == null,
-                "Offer Phase2Seed is get-only");
+            validation.Check(typeof(OutgameRequestOffer).GetProperty(nameof(OutgameRequestOffer.Phase3ImageKey)).SetMethod == null,
+                "Offer Phase3ImageKey is get-only");
+            validation.Check(typeof(OutgameRequestOffer).GetProperty("Phase2Seed") == null,
+                "Offer does not expose a Phase2Seed");
             validation.Check(typeof(OutgameRequestOffer).GetProperty(nameof(OutgameRequestOffer.Phase3Seed)).SetMethod == null,
                 "Offer Phase3Seed is get-only");
             validation.Check(typeof(OutgameRequestOfferBatch).GetProperty(nameof(OutgameRequestOfferBatch.BatchSeed)).SetMethod == null,
@@ -321,10 +323,10 @@ namespace HATAGONG.Outgame.Editor
                 "Scenario A IDs are unique");
             validation.Check(fixedResult.Batch != null && fixedResult.Batch.Offers.All(value => value.Definition.Enabled),
                 "Scenario A definitions are enabled");
-            validation.Check(fixedResult.Batch != null && fixedResult.Batch.Offers.All(value => value.Phase1Seed > 0 && value.Phase2Seed > 0 && value.Phase3Seed > 0),
+            validation.Check(fixedResult.Batch != null && fixedResult.Batch.Offers.All(value => value.Phase1Seed > 0 && value.Phase3Seed > 0),
                 "Scenario A phase seeds are positive");
-            validation.Check(fixedResult.Batch != null && fixedResult.Batch.Offers.All(value => new[] { value.Phase1Seed, value.Phase2Seed, value.Phase3Seed }.Distinct().Count() == 3),
-                "Scenario A phase seeds are pairwise unique");
+            validation.Check(fixedResult.Batch != null && fixedResult.Batch.Offers.All(value => value.Phase1Seed == value.Definition.Phase1Seed && value.Phase3Seed == value.Definition.Phase3Seed),
+                "Scenario A phase seeds are exact definition values");
             validation.Check(fixedResult.Batch != null && fixedResult.Batch.Offers.All(value => catalog.Requests.Any(definition => ReferenceEquals(definition, value.Definition))),
                 "Scenario A definitions come from actual catalog");
 
@@ -469,6 +471,9 @@ namespace HATAGONG.Outgame.Editor
                 RequestType.Normal,
                 GameDifficulty.Normal,
                 permanentSeed,
+                101001,
+                103001,
+                "Img_bigtiles1",
                 "Fixture",
                 "fixture_portrait",
                 "Fixture Title",
@@ -542,8 +547,8 @@ namespace HATAGONG.Outgame.Editor
                     value.Definition.RequestType != first.Definition.RequestType ||
                     value.Definition.PermanentSeed != first.Definition.PermanentSeed ||
                     value.Phase1Seed != first.Phase1Seed ||
-                    value.Phase2Seed != first.Phase2Seed ||
-                    value.Phase3Seed != first.Phase3Seed)) return false;
+                    value.Phase3Seed != first.Phase3Seed ||
+                    value.Phase3ImageKey != first.Phase3ImageKey)) return false;
             }
             return true;
         }
@@ -650,7 +655,7 @@ namespace HATAGONG.Outgame.Editor
         {
             if (batch == null) return "<null>";
             return batch.BatchSeed + "|" + string.Join("|", batch.Offers.Select(value =>
-                $"{value.Definition.RequestId}:{value.Phase1Seed}:{value.Phase2Seed}:{value.Phase3Seed}"));
+                $"{value.Definition.RequestId}:{value.Phase1Seed}:{value.Phase3Seed}:{value.Phase3ImageKey}"));
         }
 
         private static string RequestIdSignature(OutgameRequestOfferBatch batch)
@@ -660,7 +665,7 @@ namespace HATAGONG.Outgame.Editor
 
         private static string PhaseSeedSignature(OutgameRequestOffer offer)
         {
-            return $"{offer.Phase1Seed}:{offer.Phase2Seed}:{offer.Phase3Seed}";
+            return $"{offer.Phase1Seed}:{offer.Phase3Seed}:{offer.Phase3ImageKey}";
         }
 
         private static string ComputeAssetHash(string projectRelativePath)

@@ -4,7 +4,7 @@ namespace HATAGONG.GameFlow
 {
     public sealed class GameCountdownTimer
     {
-        private readonly double durationSeconds;
+        private double durationSeconds;
         private bool expirationRaised;
 
         public GameCountdownTimer(double durationSeconds)
@@ -25,6 +25,15 @@ namespace HATAGONG.GameFlow
         public bool IsPaused => CurrentState == GameTimerState.Paused;
         public bool IsExpired => CurrentState == GameTimerState.Expired;
         public bool HasValidDuration => durationSeconds > 0d;
+        public double DurationSeconds => durationSeconds;
+
+        public bool TrySetDuration(double seconds)
+        {
+            if (!IsValidDuration(seconds)) return false;
+            durationSeconds = seconds;
+            ResetTimer();
+            return true;
+        }
 
         public void StartTimer()
         {
@@ -64,6 +73,20 @@ namespace HATAGONG.GameFlow
             RemainingSeconds = Math.Max(0d, RemainingSeconds - deltaSeconds);
             RaiseDisplayIfChanged(previousDisplay);
             if (RemainingSeconds <= 0d) Expire();
+        }
+
+        public bool TryAddSeconds(double seconds, double maximumSeconds)
+        {
+            if (CurrentState != GameTimerState.Running || seconds <= 0d || maximumSeconds <= 0d ||
+                double.IsNaN(seconds) || double.IsInfinity(seconds) ||
+                double.IsNaN(maximumSeconds) || double.IsInfinity(maximumSeconds) ||
+                RemainingSeconds >= maximumSeconds) return false;
+            int previousDisplay = DisplayedSeconds;
+            double next = Math.Min(maximumSeconds, RemainingSeconds + seconds);
+            if (next <= RemainingSeconds) return false;
+            RemainingSeconds = next;
+            RaiseDisplayIfChanged(previousDisplay);
+            return true;
         }
 
         public static int ToDisplayedSeconds(double seconds)

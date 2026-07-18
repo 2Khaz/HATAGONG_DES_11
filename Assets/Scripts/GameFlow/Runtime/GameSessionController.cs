@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using HATAGONG.Outgame;
-using HATAGONG.Phase3;
 using HATAGONG.Phase3Tangram;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -46,13 +45,21 @@ namespace HATAGONG.GameFlow
         private IGamePhase _pendingNextPhase;
         private double _transitionStartedAt;
         private bool _resultSceneLoadRequested;
+        private bool _settingsPaused;
+        private bool _stageClearRecorded;
 
         public GameSessionState CurrentState => _model.CurrentState;
-        public bool CanAcceptGameplayInput => _model.CanAcceptGameplayInput;
-        public bool CanAddScore => _model.CanAddScore;
+        public bool CanAcceptGameplayInput => _model.CanAcceptGameplayInput && !_settingsPaused;
+        public bool CanAddScore => _model.CanAddScore && !_settingsPaused;
         public bool IsTransitioning => _model.IsTransitioning;
         public bool IsExpired => _model.IsExpired;
         public bool IsCompleted => _model.IsCompleted;
+        public bool IsSceneLoadRequested => _resultSceneLoadRequested;
+        public bool IsTimerPaused => timer && timer.IsPaused;
+        public bool IsSettingsPaused => _settingsPaused;
+        public bool CanOpenSettings => !_settingsPaused && !_resultSceneLoadRequested &&
+            _model.CurrentState == GameSessionState.Playing && CurrentPhase != null &&
+            CurrentPhase.IsPrepared && CurrentPhase.IsRunning && !CurrentPhase.IsCleared && !CurrentPhase.IsExitReady;
         public GameRunContext RunContext => _runContext;
         public IGamePhase CurrentPhase => _phaseTransaction?.CurrentPhase;
         public double LastTransitionElapsedSeconds { get; private set; }
@@ -85,10 +92,24 @@ namespace HATAGONG.GameFlow
                 return;
             }
 
+            string effect1 = _runContext.EffectIds != null && _runContext.EffectIds.Count > 0 ? _runContext.EffectIds[0] : string.Empty;
+            string effect2 = _runContext.EffectIds != null && _runContext.EffectIds.Count > 1 ? _runContext.EffectIds[1] : string.Empty;
+            string effect3 = _runContext.EffectIds != null && _runContext.EffectIds.Count > 2 ? _runContext.EffectIds[2] : string.Empty;
+            Debug.Log($"[RequestEffect][Session] requestId={_runContext.RequestId}, permanentSeed={_runContext.PermanentSeed}, effect1={effect1}, effect2={effect2}, effect3={effect3}, active=[{string.Join(",", _runContext.EffectIds ?? Array.Empty<string>())}]", this);
+
+            if (_runContext.HasEffect(RequestEffectRuntime.TimeDown) &&
+                !timer.TrySetDuration(RequestEffectRuntime.TimeDownDurationSeconds))
+            {
+                FailInitialization("Request time-down effect could not configure the game timer.");
+                return;
+            }
+
             timer.Timer.TimerExpired += OnTimerExpired;
             score.ResetForNewSession();
             timer.ResetTimer();
+            Debug.Log($"[RequestEffect][Timer] timedown={_runContext.HasEffect(RequestEffectRuntime.TimeDown)}, defaultDuration=90, actualDuration={timer.Timer.DurationSeconds:F0}", this);
             _terminalPhaseClearGate.Reset();
+            _stageClearRecorded = false;
 
             if (!GamePhaseRegistry.TryCreate(phases, initialPhase, out _registry, out string registryError))
             {
@@ -139,7 +160,8 @@ namespace HATAGONG.GameFlow
             }
 
             context = new GameRunContext(selection.RequestId, selection.Difficulty, selection.RequestType,
-                selection.PermanentSeed, selection.Phase1Seed, selection.Phase2Seed, selection.Phase3Seed);
+                selection.PermanentSeed, selection.Phase1Seed, selection.Phase3Seed, selection.Phase3ImageKey,
+                selection.EffectIds);
             if (context.IsValid)
             {
                 error = string.Empty;
@@ -175,11 +197,12 @@ namespace HATAGONG.GameFlow
 
         public bool TryCommitTerminalDefeat()
         {
-            if (_terminalPhaseClearGate.ShouldIgnoreTimerExpiration || !_model.SetState(GameSessionState.Expired)) return false;
+            if (_settingsPaused || _terminalPhaseClearGate.ShouldIgnoreTimerExpiration || !_model.SetState(GameSessionState.Expired)) return false;
             timer?.StopTimer();
             _registry?.DisableAllInput();
             _phaseTransaction?.SetCurrentInputEnabled(false);
             score?.LockScore();
+            GameSfxPlayer.Play(GameSfxId.Fail);
             if (!transition || !transition.ShowGameDefeated(RestartSameRequest, ReturnToOutgameLobby))
                 Debug.LogError("[GameFlow][Defeat] Result overlay could not be shown. Session remains Expired with all gameplay locked.", this);
             return true;
@@ -201,18 +224,59 @@ namespace HATAGONG.GameFlow
             _phaseTransaction?.SetCurrentInputEnabled(false);
             timer.StopTimer();
             score.LockScore();
+            GameSfxPlayer.Play(GameSfxId.Clear);
             var summary = new GameCompletionSummary(
                 timer.DisplayedSeconds,
-                acquiredScore: Phase3ScoreRules.PhaseClearScore,
-                finalScore: score.CurrentScore);
+                acquiredScore: score.CurrentScore);
             if (!transition.ShowGameCompleted(summary, ReturnToOutgameLobbyAfterSuccess))
                 Debug.LogError("[GameFlow][Completion] Result overlay could not be shown. Session remains Completed.", this);
         }
 
         public bool TryCommitTerminalPhaseClear(GamePhaseId phaseId)
         {
+            if (_settingsPaused) return false;
             GamePhaseId currentPhaseId = CurrentPhase != null ? CurrentPhase.PhaseId : default;
-            return _terminalPhaseClearGate.TryCommit(_model.CurrentState, phaseId, currentPhaseId, timer ? timer.StopTimer : null);
+            bool wasCommitted = _terminalPhaseClearGate.IsCommitted;
+            bool committed = _terminalPhaseClearGate.TryCommit(_model.CurrentState, phaseId, currentPhaseId, timer ? timer.StopTimer : null);
+            if (!committed || wasCommitted || _stageClearRecorded) return committed;
+
+            _stageClearRecorded = true;
+            if (PlayerProgressRepository.RecordStageClear(out int clearedStageCount))
+                Debug.Log($"[Outgame][Progress] Terminal request success recorded once. clearedStages={clearedStageCount}.", this);
+            else
+                Debug.LogError("[Outgame][Progress] Terminal request success committed, but persistent progress could not be saved.", this);
+            return true;
+        }
+
+        public bool TryPauseForSettings()
+        {
+            if (!CanOpenSettings || timer == null || _phaseTransaction == null) return false;
+            _settingsPaused = true;
+            timer.PauseTimer();
+            _phaseTransaction.SetCurrentInputEnabled(false);
+            return true;
+        }
+
+        public bool TryResumeFromSettings()
+        {
+            if (!_settingsPaused || _resultSceneLoadRequested || _model.CurrentState != GameSessionState.Playing ||
+                CurrentPhase == null || !CurrentPhase.IsPrepared || !CurrentPhase.IsRunning ||
+                CurrentPhase.IsCleared || CurrentPhase.IsExitReady) return false;
+
+            _settingsPaused = false;
+            timer.ResumeTimer();
+            _phaseTransaction.SetCurrentInputEnabled(true);
+            return true;
+        }
+
+        public bool TryExitToOutgameFromSettings()
+        {
+            const string sceneName = "OUTGAME_LOBBY";
+            if (!_settingsPaused || _resultSceneLoadRequested || _model.CurrentState != GameSessionState.Playing ||
+                !Application.CanStreamedLevelBeLoaded(sceneName)) return false;
+            if (!TryLoadResultScene(sceneName, "SettingsExit")) return false;
+            OutgameRequestSelectionStore.Clear();
+            return true;
         }
 
         private bool RestartSameRequest()

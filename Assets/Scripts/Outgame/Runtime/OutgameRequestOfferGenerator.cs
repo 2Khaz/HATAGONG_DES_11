@@ -7,10 +7,6 @@ namespace HATAGONG.Outgame
     {
         public const int MaximumOfferCount = 3;
 
-        internal const uint Phase1Domain = 0x9E3779B9u;
-        internal const uint Phase2Domain = 0x85EBCA6Bu;
-        internal const uint Phase3Domain = 0xC2B2AE35u;
-
         private const uint ShuffleDomain = 0xA511E9B3u;
         private const uint DuplicateDomain = 0x63D83595u;
 
@@ -81,6 +77,7 @@ namespace HATAGONG.Outgame
 
             var requestIds = new HashSet<string>(StringComparer.Ordinal);
             var permanentSeeds = new HashSet<int>();
+            var seedTuples = new HashSet<string>(StringComparer.Ordinal);
             for (int i = 0; i < requests.Count; i++)
             {
                 OutgameRequestDefinition request = requests[i];
@@ -95,6 +92,15 @@ namespace HATAGONG.Outgame
                     errors.Add($"Request '{request.RequestId}' has a non-positive PermanentSeed.");
                 else if (!permanentSeeds.Add(request.PermanentSeed))
                     errors.Add($"Duplicate PermanentSeed '{request.PermanentSeed}'.");
+                if (request.Phase1Seed <= 0)
+                    errors.Add($"Request '{request.RequestId}' has a non-positive Phase1Seed.");
+                if (request.Phase3Seed <= 0)
+                    errors.Add($"Request '{request.RequestId}' has a non-positive Phase3Seed.");
+                if (request.Phase3ImageKey != "Img_bigtiles1" && request.Phase3ImageKey != "Img_bigtiles2" && request.Phase3ImageKey != "Img_bigtiles3")
+                    errors.Add($"Request '{request.RequestId}' has an unsupported Phase3ImageKey '{request.Phase3ImageKey}'.");
+                string seedTuple = request.PermanentSeed + ":" + request.Phase1Seed + ":" + request.Phase3Seed;
+                if (!seedTuples.Add(seedTuple))
+                    errors.Add($"Duplicate request seed tuple '{seedTuple}'.");
             }
 
             if (enabled.Count == 0)
@@ -108,30 +114,7 @@ namespace HATAGONG.Outgame
 
         private static OutgameRequestOffer CreateOffer(OutgameRequestDefinition definition)
         {
-            int phase1Seed = DerivePositiveSeed(definition.PermanentSeed, Phase1Domain);
-            int phase2Seed = EnsureUnique(
-                DerivePositiveSeed(definition.PermanentSeed, Phase2Domain),
-                phase1Seed,
-                0);
-            int phase3Seed = EnsureUnique(
-                DerivePositiveSeed(definition.PermanentSeed, Phase3Domain),
-                phase1Seed,
-                phase2Seed);
-            return new OutgameRequestOffer(definition, phase1Seed, phase2Seed, phase3Seed);
-        }
-
-        private static int DerivePositiveSeed(int permanentSeed, uint phaseDomain)
-        {
-            uint value = Mix32(unchecked((uint)permanentSeed) ^ phaseDomain);
-            int result = unchecked((int)(value & 0x7FFFFFFFu));
-            return result == 0 ? 1 : result;
-        }
-
-        private static int EnsureUnique(int candidate, int first, int second)
-        {
-            while (candidate == first || candidate == second)
-                candidate = candidate == int.MaxValue ? 1 : candidate + 1;
-            return candidate;
+            return new OutgameRequestOffer(definition);
         }
 
         private static uint Mix32(uint value)

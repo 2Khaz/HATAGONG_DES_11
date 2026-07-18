@@ -5,7 +5,7 @@ using UnityEngine.UI;
 
 namespace HATAGONG.GameFlow
 {
-    public sealed class Phase1PhaseAdapter : MonoBehaviour, IGamePhase
+    public sealed class Phase1PhaseAdapter : MonoBehaviour, IGamePhase, IGameplayInputStatus
     {
         [SerializeField] private Phase1BoardController board;
         [SerializeField] private Phase1InputController input;
@@ -20,6 +20,7 @@ namespace HATAGONG.GameFlow
         public bool IsRunning { get; private set; }
         public bool IsCleared { get; private set; }
         public bool IsExitReady { get; private set; }
+        public bool IsGameplayInputEnabled => input && input.InputEnabled && IsPrepared && IsRunning && !IsCleared && !IsExitReady;
         public GameRunContext RunContext { get; private set; }
 
         public event Action PhaseCleared;
@@ -45,6 +46,7 @@ namespace HATAGONG.GameFlow
                 return false;
             }
             if (!EnsureSubscribed()) return false;
+            board.ConfigureRequestEffects(context);
             if (IsPrepared)
             {
                 bool prepared = context.HasSelectedRequest ? board.Prepare(phase1Difficulty, context.Phase1Seed) : board.Prepare(phase1Difficulty);

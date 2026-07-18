@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using HATAGONG.GameFlow;
 
 namespace HATAGONG.Outgame
@@ -15,9 +17,10 @@ namespace HATAGONG.Outgame
             Difficulty = definition.Difficulty;
             RequestType = definition.RequestType;
             PermanentSeed = definition.PermanentSeed;
-            Phase1Seed = offer.Phase1Seed;
-            Phase2Seed = offer.Phase2Seed;
-            Phase3Seed = offer.Phase3Seed;
+            Phase1Seed = definition.Phase1Seed;
+            Phase3Seed = definition.Phase3Seed;
+            Phase3ImageKey = definition.Phase3ImageKey;
+            EffectIds = Array.AsReadOnly(definition.Effects.Select(effect => effect.EffectId).ToArray());
         }
 
         public OutgameRequestOffer OfferSnapshot { get; }
@@ -26,7 +29,8 @@ namespace HATAGONG.Outgame
         public RequestType RequestType { get; }
         public int PermanentSeed { get; }
         public int Phase1Seed { get; }
-        public int Phase2Seed { get; }
         public int Phase3Seed { get; }
+        public string Phase3ImageKey { get; }
+        public IReadOnlyList<string> EffectIds { get; }
     }
 }

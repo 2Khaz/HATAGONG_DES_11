@@ -9,12 +9,14 @@ namespace HATAGONG.Outgame
             bool enabled,
             string effectName,
             string effectIconKey,
+            string effectScriptKey,
             string description)
         {
             EffectId = effectId ?? throw new ArgumentNullException(nameof(effectId));
             Enabled = enabled;
             EffectName = effectName ?? throw new ArgumentNullException(nameof(effectName));
             EffectIconKey = effectIconKey ?? throw new ArgumentNullException(nameof(effectIconKey));
+            EffectScriptKey = effectScriptKey ?? throw new ArgumentNullException(nameof(effectScriptKey));
             Description = description ?? throw new ArgumentNullException(nameof(description));
         }
 
@@ -22,6 +24,7 @@ namespace HATAGONG.Outgame
         public bool Enabled { get; }
         public string EffectName { get; }
         public string EffectIconKey { get; }
+        public string EffectScriptKey { get; }
         public string Description { get; }
     }
 }

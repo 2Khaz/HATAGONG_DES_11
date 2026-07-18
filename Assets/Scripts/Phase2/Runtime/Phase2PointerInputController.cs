@@ -11,6 +11,7 @@ namespace HATAGONG.Phase2
         [SerializeField] private RectTransform inputSurface;
         private int _activePointerId = int.MinValue;
         private Vector2 _lastBoardUv;
+        private bool _brushAudioSessionActive;
 
         public bool InputEnabled { get; private set; }
         public bool HasActivePointer => _activePointerId != int.MinValue;
@@ -24,6 +25,9 @@ namespace HATAGONG.Phase2
 
         public void CancelActiveStroke()
         {
+            adapter?.EndActiveStroke();
+            GameSfxPlayer.StopBrushLoop();
+            _brushAudioSessionActive = false;
             _activePointerId = int.MinValue;
             _lastBoardUv = default;
         }
@@ -33,15 +37,18 @@ namespace HATAGONG.Phase2
             if (!CanHandle(eventData) || HasActivePointer || !TryMap(eventData, out Vector2 uv)) return;
             _activePointerId = eventData.pointerId;
             _lastBoardUv = uv;
-            if (!adapter.TryBeginStroke(uv, out _)) CancelActiveStroke();
+            if (!adapter.TryBeginStroke(uv, out Phase2OrchestrationResult result)) CancelActiveStroke();
+            else UpdateBrushSound(result);
         }
 
         public void OnDrag(PointerEventData eventData)
         {
-            if (!CanHandle(eventData) || eventData.pointerId != _activePointerId || !TryMap(eventData, out Vector2 uv)) return;
+            if (!CanHandle(eventData) || eventData.pointerId != _activePointerId) return;
+            if (!TryMap(eventData, out Vector2 uv))
+                return;
             Vector2 previous = _lastBoardUv;
             _lastBoardUv = uv;
-            adapter.TryContinueStroke(previous, uv, out _);
+            if (adapter.TryContinueStroke(previous, uv, out Phase2OrchestrationResult result)) UpdateBrushSound(result);
             if (!InputEnabled) CancelActiveStroke();
         }
 
@@ -70,6 +77,13 @@ namespace HATAGONG.Phase2
         private bool CanHandle(PointerEventData eventData)
         {
             return eventData != null && InputEnabled && adapter && adapter.IsRunning;
+        }
+
+        private void UpdateBrushSound(Phase2OrchestrationResult result)
+        {
+            if (_brushAudioSessionActive || !InputEnabled || !HasActivePointer || result.LogicAcceptedCount <= 0) return;
+            _brushAudioSessionActive = true;
+            GameSfxPlayer.StartBrushLoop();
         }
 
         public void OnApplicationFocus(bool hasFocus)

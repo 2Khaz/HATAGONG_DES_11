@@ -8,10 +8,10 @@ namespace HATAGONG.Phase2
         private int _score;
         private Phase2MilestoneFlags _milestones;
 
-        public Phase2PaintSessionModel(Phase2PaintConfig config)
+        public Phase2PaintSessionModel(Phase2PaintConfig config, int? chemicalSeed = null)
         {
             Config = config ?? throw new ArgumentNullException(nameof(config));
-            Grid = new Phase2PaintGrid(config);
+            Grid = new Phase2PaintGrid(config, chemicalSeed);
             Reset();
         }
 
@@ -41,7 +41,7 @@ namespace HATAGONG.Phase2
             Grid.Reset();
         }
 
-        public Phase2StampResult ApplyStamp(float centerU, float centerV, float radiusRatio, bool sessionPlaying, bool inputEnabled)
+        public Phase2StampResult ApplyStamp(float centerU, float centerV, float radiusRatio, bool sessionPlaying, bool inputEnabled, int strokeId = 0)
         {
             if (!Config.IsValid(out string reason))
             {
@@ -80,7 +80,9 @@ namespace HATAGONG.Phase2
             }
 
             int paintedBefore = Grid.PaintedCellCount;
-            int newlyPainted = Grid.ApplyStamp(centerU, centerV, radiusRatio, Config);
+            int newlyPainted = strokeId == 0
+                ? Grid.ApplyStamp(centerU, centerV, radiusRatio, Config)
+                : Grid.ApplyStamp(centerU, centerV, radiusRatio, Config, strokeId);
             int paintedAfter = paintedBefore + newlyPainted;
             double coverageBefore = CalculateCoverage(paintedBefore);
             double coverageAfter = CalculateCoverage(paintedAfter);

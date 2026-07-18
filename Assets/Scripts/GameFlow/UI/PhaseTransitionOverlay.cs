@@ -10,26 +10,30 @@ namespace HATAGONG.GameFlow
 {
     public readonly struct GameCompletionSummary
     {
-        public GameCompletionSummary(int remainingSeconds, int? acquiredScore, int finalScore)
+        public GameCompletionSummary(int remainingSeconds, int acquiredScore)
         {
             RemainingSeconds = Mathf.Max(0, remainingSeconds);
-            AcquiredScore = acquiredScore;
-            FinalScore = Mathf.Max(0, finalScore);
+            AcquiredScore = Mathf.Max(0, acquiredScore);
+            TimeBonusScore = checked(RemainingSeconds * 100);
+            TotalScore = checked(AcquiredScore + TimeBonusScore);
         }
 
         public int RemainingSeconds { get; }
-        public int? AcquiredScore { get; }
-        public int FinalScore { get; }
+        public int AcquiredScore { get; }
+        public int TimeBonusScore { get; }
+        public int TotalScore { get; }
     }
 
     public sealed class PhaseTransitionOverlay : MonoBehaviour, IPointerClickHandler
     {
         private const float SuccessEntranceDuration = .52f;
+        private const float SuccessReferenceCanvasWidth = 1440f;
+        private const float SuccessReferenceCanvasHeight = 2560f;
         private const float SuccessClipboardBaseWidth = 760f;
         private const float SuccessClipboardWidth = 1040f;
-        private static readonly Vector2 SuccessClipboardStart = new Vector2(0f, -1600f);
-        private static readonly Vector2 SuccessClipboardOvershoot = new Vector2(0f, 45f);
-        private static readonly Vector2 SuccessClipboardTarget = new Vector2(0f, -20f);
+        private static readonly Vector2 SuccessClipboardReferenceStart = new Vector2(0f, -1600f);
+        private static readonly Vector2 SuccessClipboardReferenceOvershoot = new Vector2(0f, 45f);
+        private static readonly Vector2 SuccessClipboardReferenceTarget = new Vector2(0f, -20f);
 
         [SerializeField] private CanvasGroup canvasGroup;
         [SerializeField] private RectTransform banner;
@@ -69,6 +73,9 @@ namespace HATAGONG.GameFlow
         private Coroutine successEntrance;
         private Func<bool> successLobbyRequested;
         private bool successInputEnabled;
+        private Vector2 successClipboardStart;
+        private Vector2 successClipboardOvershoot;
+        private Vector2 successClipboardTarget;
 
         public bool IsPlaying => sequence != null;
         public bool MidpointSucceeded => midpointSucceeded;
@@ -111,13 +118,14 @@ namespace HATAGONG.GameFlow
                 successResultRoot.SetActive(true);
                 successResultRoot.transform.SetAsLastSibling();
                 successInputCatcher.raycastTarget = true;
-                successClipboard.anchoredPosition = SuccessClipboardStart;
+                ApplySuccessResponsiveLayout();
+                successClipboard.anchoredPosition = successClipboardStart;
                 canvasGroup.alpha = 1f;
                 canvasGroup.interactable = true;
                 canvasGroup.blocksRaycasts = true;
                 successEntrance = StartCoroutine(PlaySuccessEntrance());
                 if (successEntrance == null) throw new InvalidOperationException("Success entrance coroutine did not start.");
-                Debug.Log($"[GameFlow][Completion] Success result scheduled after shine. remaining={summary.RemainingSeconds}, finalScore={summary.FinalScore}", this);
+                Debug.Log($"[GameFlow][Completion] Success result scheduled after shine. acquired={summary.AcquiredScore}, remaining={summary.RemainingSeconds}, timeBonus={summary.TimeBonusScore}, total={summary.TotalScore}", this);
                 return true;
             }
             catch (Exception exception)
@@ -165,8 +173,9 @@ namespace HATAGONG.GameFlow
         public void OnPointerClick(PointerEventData eventData)
         {
             if (!gameCompletionVisible || !successInputEnabled || resultNavigationStarted || sceneLoadRequested ||
-                eventData == null || eventData.button != PointerEventData.InputButton.Left) return;
+            eventData == null || eventData.button != PointerEventData.InputButton.Left) return;
 
+            GameSfxPlayer.Play(GameSfxId.Click);
             resultNavigationStarted = true;
             sceneLoadRequested = true;
             successInputEnabled = false;
@@ -182,7 +191,7 @@ namespace HATAGONG.GameFlow
         {
             canvasGroup.alpha = 1f;
             canvasGroup.blocksRaycasts = true;
-            messageText.text = $"PHASE {(int)phase} CLEAR!!";
+            messageText.text = $"Phase {(int)phase} 클리어!!";
             float width = ((RectTransform)transform).rect.width;
             float distance = (width + banner.rect.width) * .5f;
             banner.anchoredPosition = new Vector2(distance, 0f);
@@ -251,6 +260,15 @@ namespace HATAGONG.GameFlow
             if (defeatRetryButton) defeatRetryButton.onClick.RemoveListener(HandleRetryClicked);
         }
 
+        private void OnRectTransformDimensionsChange()
+        {
+            if (!successResultRoot || !successClipboard) return;
+
+            ApplySuccessResponsiveLayout();
+            if (gameCompletionVisible && successEntrance == null)
+                successClipboard.anchoredPosition = successClipboardTarget;
+        }
+
         private void EnsureSuccessResultBuilt()
         {
             if (successResultRoot) return;
@@ -268,55 +286,85 @@ namespace HATAGONG.GameFlow
             successInputCatcher.color = Color.clear;
             successInputCatcher.raycastTarget = true;
 
-            successClipboard = CreateRect("ClipboardRoot", root, SuccessClipboardStart,
-                AspectSize(successQuestPanelSprite, SuccessClipboardWidth));
+            successClipboard = CreateRect("ClipboardRoot", root, SuccessClipboardReferenceStart,
+                AspectSize(successQuestPanelSprite, SuccessClipboardBaseWidth));
             Image questPanel = successClipboard.gameObject.AddComponent<Image>();
             questPanel.sprite = successQuestPanelSprite;
             questPanel.color = Color.white;
             questPanel.preserveAspect = true;
             questPanel.raycastTarget = false;
 
-            TextMeshProUGUI clearTitle = CreateText("Title_Clear", successClipboard, ScaleSuccessLayout(new Vector2(0f, 390f)), ScaleSuccessLayout(new Vector2(620f, 140f)),
-                "CLEAR!", ScaleSuccessLayout(92f), new Color32(255, 198, 42, 255), TextAlignmentOptions.Center);
+            TextMeshProUGUI clearTitle = CreateText("Title_Clear", successClipboard, new Vector2(0f, 396f), new Vector2(620f, 140f),
+                "CLEAR!", 92f, new Color32(255, 198, 42, 255), TextAlignmentOptions.Center);
             clearTitle.fontStyle = FontStyles.Bold;
             clearTitle.outlineColor = new Color32(25, 31, 39, 255);
             clearTitle.outlineWidth = .18f;
 
-            RectTransform scoreSection = CreateRect("ScoreSection", successClipboard, ScaleSuccessLayout(new Vector2(0f, 170f)), ScaleSuccessLayout(new Vector2(650f, 130f)));
-            CreateImage("Img_StarIcon", scoreSection, ScaleSuccessLayout(new Vector2(-235f, 0f)), ScaleSuccessLayout(new Vector2(88f, 84f)), successStarIconSprite);
-            successAcquiredScoreText = CreateText("Text_AcquiredScore", scoreSection, ScaleSuccessLayout(new Vector2(45f, 0f)), ScaleSuccessLayout(new Vector2(470f, 88f)),
-                string.Empty, ScaleSuccessLayout(46f), new Color32(48, 54, 62, 255), TextAlignmentOptions.Center);
+            RectTransform scoreSection = CreateRect("ScoreSection", successClipboard, new Vector2(0f, 266f), new Vector2(650f, 130f));
+            CreateImage("Img_StarIcon", scoreSection, new Vector2(-235f, 0f), new Vector2(88f, 84f), successStarIconSprite);
+            successAcquiredScoreText = CreateText("Text_AcquiredScore", scoreSection, new Vector2(90f, 0f), new Vector2(420f, 88f),
+                string.Empty, 46f, new Color32(48, 54, 62, 255), TextAlignmentOptions.Left);
             successAcquiredScoreText.fontStyle = FontStyles.Bold;
 
-            RectTransform timeSection = CreateRect("TimeSection", successClipboard, ScaleSuccessLayout(new Vector2(0f, 20f)), ScaleSuccessLayout(new Vector2(650f, 130f)));
-            CreateImage("Img_TimeIcon", timeSection, ScaleSuccessLayout(new Vector2(-235f, 0f)), AspectSize(successTimeIconSprite, ScaleSuccessLayout(82f)), successTimeIconSprite);
-            successRemainingTimeText = CreateText("Text_RemainingTime", timeSection, ScaleSuccessLayout(new Vector2(45f, 0f)), ScaleSuccessLayout(new Vector2(470f, 88f)),
-                string.Empty, ScaleSuccessLayout(46f), new Color32(48, 54, 62, 255), TextAlignmentOptions.Center);
+            RectTransform timeSection = CreateRect("TimeSection", successClipboard, new Vector2(0f, 118f), new Vector2(650f, 130f));
+            CreateImage("Img_TimeIcon", timeSection, new Vector2(-235f, 0f), AspectSize(successTimeIconSprite, 82f), successTimeIconSprite);
+            successRemainingTimeText = CreateText("Text_RemainingTime", timeSection, new Vector2(90f, 0f), new Vector2(420f, 88f),
+                string.Empty, 46f, new Color32(48, 54, 62, 255), TextAlignmentOptions.Left);
             successRemainingTimeText.fontStyle = FontStyles.Bold;
 
-            RectTransform totalSection = CreateRect("TotalScoreSection", successClipboard, ScaleSuccessLayout(new Vector2(0f, -135f)), ScaleSuccessLayout(new Vector2(650f, 145f)));
-            successTotalScoreText = CreateText("Text_TotalScore", totalSection, Vector2.zero, ScaleSuccessLayout(new Vector2(620f, 110f)),
-                string.Empty, ScaleSuccessLayout(58f), new Color32(24, 72, 145, 255), TextAlignmentOptions.Center);
+            RectTransform totalSection = CreateRect("TotalScoreSection", successClipboard, new Vector2(0f, -38f), new Vector2(650f, 145f));
+            successTotalScoreText = CreateText("Text_TotalScore", totalSection, Vector2.zero, new Vector2(620f, 110f),
+                string.Empty, 58f, new Color32(24, 72, 145, 255), TextAlignmentOptions.Center);
             successTotalScoreText.fontStyle = FontStyles.Bold;
 
-            RectTransform goldPanel = CreateRect("GoldPanel", successClipboard, ScaleSuccessLayout(new Vector2(0f, -370f)),
-                AspectSize(successGoldPanelSprite, ScaleSuccessLayout(610f)));
+            RectTransform goldPanel = CreateRect("GoldPanel", successClipboard, new Vector2(0f, -251f),
+                AspectSize(successGoldPanelSprite, 500f));
             CreateImage("Img_GoldPanel", goldPanel, Vector2.zero, goldPanel.sizeDelta, successGoldPanelSprite);
-            CreateImage("Img_GoldIcon", goldPanel, ScaleSuccessLayout(new Vector2(-180f, 0f)), ScaleSuccessLayout(new Vector2(98f, 98f)), successGoldIconSprite);
-            successGoldRewardText = CreateText("Text_GoldReward", goldPanel, ScaleSuccessLayout(new Vector2(85f, 0f)), ScaleSuccessLayout(new Vector2(380f, 100f)),
-                string.Empty, ScaleSuccessLayout(50f), new Color32(220, 153, 18, 255), TextAlignmentOptions.Center);
+            CreateImage("Img_GoldIcon", goldPanel, new Vector2(-172f, -25f), new Vector2(100f, 100f), successGoldIconSprite);
+            successGoldRewardText = CreateText("Text_GoldReward", goldPanel, new Vector2(45f, -25f), new Vector2(310f, 90f),
+                string.Empty, 46f, new Color32(220, 153, 18, 255), TextAlignmentOptions.Left);
             successGoldRewardText.fontStyle = FontStyles.Bold;
 
+            ApplySuccessResponsiveLayout();
             successResultRoot.SetActive(false);
+        }
+
+        private void ApplySuccessResponsiveLayout()
+        {
+            if (!successClipboard || !successQuestPanelSprite) return;
+
+            RectTransform viewport = successResultRoot ? successResultRoot.transform as RectTransform : transform as RectTransform;
+            float viewportWidth = viewport && viewport.rect.width > 0f ? viewport.rect.width : SuccessReferenceCanvasWidth;
+            float viewportHeight = viewport && viewport.rect.height > 0f ? viewport.rect.height : SuccessReferenceCanvasHeight;
+            float clipboardAspect = successQuestPanelSprite.rect.width > 0f
+                ? successQuestPanelSprite.rect.height / successQuestPanelSprite.rect.width
+                : 1f;
+
+            float widthLimitedVisualWidth = viewportWidth * (SuccessClipboardWidth / SuccessReferenceCanvasWidth);
+            float referenceVisualHeight = SuccessClipboardWidth * clipboardAspect;
+            float heightLimitedVisualWidth = viewportHeight * (referenceVisualHeight / SuccessReferenceCanvasHeight) / clipboardAspect;
+            float visualWidth = Mathf.Min(widthLimitedVisualWidth, heightLimitedVisualWidth);
+            float uniformScale = Mathf.Max(.01f, visualWidth / SuccessClipboardBaseWidth);
+
+            successClipboard.anchorMin = successClipboard.anchorMax = successClipboard.pivot = new Vector2(.5f, .5f);
+            successClipboard.sizeDelta = AspectSize(successQuestPanelSprite, SuccessClipboardBaseWidth);
+            successClipboard.localScale = Vector3.one * uniformScale;
+
+            float horizontalRatio = viewportWidth / SuccessReferenceCanvasWidth;
+            float verticalRatio = viewportHeight / SuccessReferenceCanvasHeight;
+            successClipboardStart = new Vector2(SuccessClipboardReferenceStart.x * horizontalRatio,
+                SuccessClipboardReferenceStart.y * verticalRatio);
+            successClipboardOvershoot = new Vector2(SuccessClipboardReferenceOvershoot.x * horizontalRatio,
+                SuccessClipboardReferenceOvershoot.y * verticalRatio);
+            successClipboardTarget = new Vector2(SuccessClipboardReferenceTarget.x * horizontalRatio,
+                SuccessClipboardReferenceTarget.y * verticalRatio);
         }
 
         private void ApplySuccessSummary(GameCompletionSummary summary)
         {
-            successAcquiredScoreText.text = summary.AcquiredScore.HasValue
-                ? $"획득 점수  <color=#184B91>{summary.AcquiredScore.Value:N0}</color>"
-                : "획득 점수  <color=#184B91>0</color>";
+            successAcquiredScoreText.text = $"획득 점수  <color=#184B91>{summary.AcquiredScore:N0}</color>";
             successRemainingTimeText.text = $"남은 시간  <color=#184B91>{summary.RemainingSeconds:N0}초</color>";
-            successTotalScoreText.text = $"총 점수  <color=#144E9C>{summary.FinalScore:N0}</color>";
+            successTotalScoreText.text = $"총 점수  <color=#144E9C>{summary.TotalScore:N0}</color>";
             successGoldRewardText.text = "<color=#8A6424>획득 골드</color>  0 골드";
         }
 
@@ -329,7 +377,7 @@ namespace HATAGONG.GameFlow
                 elapsed += Time.unscaledDeltaTime;
                 float t = Mathf.Clamp01(elapsed / riseDuration);
                 float eased = 1f - Mathf.Pow(1f - t, 3f);
-                successClipboard.anchoredPosition = Vector2.LerpUnclamped(SuccessClipboardStart, SuccessClipboardOvershoot, eased);
+                successClipboard.anchoredPosition = Vector2.LerpUnclamped(successClipboardStart, successClipboardOvershoot, eased);
                 yield return null;
             }
 
@@ -339,11 +387,11 @@ namespace HATAGONG.GameFlow
                 elapsed += Time.unscaledDeltaTime;
                 float t = Mathf.Clamp01(elapsed / .1f);
                 float eased = t * t * (3f - 2f * t);
-                successClipboard.anchoredPosition = Vector2.LerpUnclamped(SuccessClipboardOvershoot, SuccessClipboardTarget, eased);
+                successClipboard.anchoredPosition = Vector2.LerpUnclamped(successClipboardOvershoot, successClipboardTarget, eased);
                 yield return null;
             }
 
-            successClipboard.anchoredPosition = SuccessClipboardTarget;
+            successClipboard.anchoredPosition = successClipboardTarget;
             while (IsAnyPointerPressed()) yield return null;
             yield return null;
             successEntrance = null;
@@ -430,6 +478,7 @@ namespace HATAGONG.GameFlow
         private void HandleRetryClicked()
         {
             if (!TryBeginResultNavigation()) return;
+            GameSfxPlayer.Play(GameSfxId.Click);
             bool accepted = false;
             try { accepted = retryRequested?.Invoke() == true; }
             catch (Exception exception) { Debug.LogError("[GameFlow][Defeat] Retry request failed: " + exception, this); }
@@ -442,6 +491,7 @@ namespace HATAGONG.GameFlow
         private void HandleLobbyClicked()
         {
             if (!TryBeginResultNavigation()) return;
+            GameSfxPlayer.Play(GameSfxId.Click);
             bool accepted = false;
             try { accepted = lobbyRequested?.Invoke() == true; }
             catch (Exception exception) { Debug.LogError("[GameFlow][Defeat] Lobby request failed: " + exception, this); }
@@ -519,9 +569,6 @@ namespace HATAGONG.GameFlow
             float height = sprite && sprite.rect.width > 0f ? width * sprite.rect.height / sprite.rect.width : width;
             return new Vector2(width, height);
         }
-
-        private static float ScaleSuccessLayout(float value) => value * (SuccessClipboardWidth / SuccessClipboardBaseWidth);
-        private static Vector2 ScaleSuccessLayout(Vector2 value) => value * (SuccessClipboardWidth / SuccessClipboardBaseWidth);
 
         private IEnumerator Move(float from, float to, float duration, bool easeIn)
         {

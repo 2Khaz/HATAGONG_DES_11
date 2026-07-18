@@ -18,11 +18,33 @@ namespace HATAGONG.Outgame.Editor
     {
         private const string ScenePath = "Assets/Scenes/OUTGAME_LOBBY.unity";
         private const string PrefabPath = "Assets/Prefabs/Outgame/Requests/OutgameRequestCard.prefab";
-        private const string BaseSpritePath = "Assets/Resources/Outgame/base.png";
+        private const string BaseSpritePath = "Assets/Resources/Img_questui.png";
+        private const string ButtonSpritePath = "Assets/Resources/Outgame/Request/Img_button_request.png";
+        private const string EmptyEffectSpritePath = "Assets/Resources/Outgame/Request/Img_icon_quest_null.png";
         private const string InactiveStarPath = "Assets/Resources/Ingame/ICON/LevelICON/Img_icon_star1.png";
         private const string ActiveStarPath = "Assets/Resources/Ingame/ICON/LevelICON/Img_icon_star2.png";
         private const string FontPath = "Assets/Resources/Fonts/Hakgyoansim_JayusiganR SDF.asset";
+        private const string AccentFontPath = "Assets/Resources/Fonts/Jua-Regular SDF.asset";
         private const int ValidationBatchSeed = 20260716;
+
+        private static readonly string[] PortraitKeys =
+        {
+            "portrait_client_01", "portrait_client_02", "portrait_client_03", "portrait_client_04",
+            "portrait_client_05", "portrait_client_06", "portrait_client_07"
+        };
+
+        private static readonly string[] PortraitSpritePaths = Enumerable.Range(1, 7)
+            .Select(index => $"Assets/Resources/Outgame/Request/Img_portrait_quest{index}.png")
+            .ToArray();
+
+        private static readonly string[] EffectKeys =
+        {
+            "request_effect_focus", "request_effect_rush", "request_effect_bonus",
+            "request_effect_01", "request_effect_02", "request_effect_03", "request_effect_04",
+            "request_effect_05", "request_effect_06", "request_effect_07"
+        };
+
+        private static readonly int[] EffectSpriteIndexes = { 1, 2, 3, 1, 2, 3, 4, 5, 6, 7 };
 
         private const string PlayRequestedKey = "HATAGONG.Outgame.Stage4.PlayRequested";
         private const string PlayRunningKey = "HATAGONG.Outgame.Stage4.PlayRunning";
@@ -48,14 +70,30 @@ namespace HATAGONG.Outgame.Editor
                 throw new InvalidOperationException("OUTGAME_LOBBY must be the active Scene.");
 
             Sprite baseSprite = LoadRequired<Sprite>(BaseSpritePath);
+            Texture2D buttonTexture = LoadRequired<Texture2D>(ButtonSpritePath);
+            Sprite emptyEffectSprite = LoadRequired<Sprite>(EmptyEffectSpritePath);
+            Sprite[] portraitSprites = PortraitSpritePaths.Select(path => LoadRequired<Sprite>(path)).ToArray();
+            Sprite[] effectSprites = EffectSpriteIndexes
+                .Select(index => LoadRequired<Sprite>($"Assets/Resources/Outgame/Request/Img_icon_quest{index}.png"))
+                .ToArray();
             Sprite inactiveStar = LoadRequired<Sprite>(InactiveStarPath);
             Sprite activeStar = LoadRequired<Sprite>(ActiveStarPath);
             TMP_FontAsset font = LoadRequired<TMP_FontAsset>(FontPath);
+            TMP_FontAsset accentFont = LoadRequired<TMP_FontAsset>(AccentFontPath);
             EnsureFolder("Assets", "Prefabs");
             EnsureFolder("Assets/Prefabs", "Outgame");
             EnsureFolder("Assets/Prefabs/Outgame", "Requests");
 
-            OutgameRequestCardView prefab = CreateCardPrefab(baseSprite, inactiveStar, activeStar, font);
+            OutgameRequestCardView prefab = CreateCardPrefab(
+                baseSprite,
+                buttonTexture,
+                emptyEffectSprite,
+                portraitSprites,
+                effectSprites,
+                inactiveStar,
+                activeStar,
+                font,
+                accentFont);
             CreateScenePopup(prefab);
             EditorSceneManager.SaveScene(scene);
             AssetDatabase.SaveAssets();
@@ -121,17 +159,22 @@ namespace HATAGONG.Outgame.Editor
 
         private static OutgameRequestCardView CreateCardPrefab(
             Sprite baseSprite,
+            Texture2D buttonTexture,
+            Sprite emptyEffectSprite,
+            Sprite[] portraitSprites,
+            Sprite[] effectSprites,
             Sprite inactiveStar,
             Sprite activeStar,
-            TMP_FontAsset font)
+            TMP_FontAsset font,
+            TMP_FontAsset accentFont)
         {
             var root = new GameObject("OutgameRequestCard", typeof(RectTransform), typeof(LayoutElement), typeof(OutgameRequestCardView));
             root.layer = LayerMask.NameToLayer("UI");
             RectTransform rootRect = root.GetComponent<RectTransform>();
-            SetRect(rootRect, Vector2.zero, new Vector2(390f, 541.85f));
+            SetRect(rootRect, Vector2.zero, new Vector2(390f, 580.9655f));
             LayoutElement layout = root.GetComponent<LayoutElement>();
             layout.preferredWidth = 390f;
-            layout.preferredHeight = 541.85f;
+            layout.preferredHeight = 580.9655f;
             layout.flexibleWidth = 0f;
             layout.flexibleHeight = 0f;
 
@@ -139,10 +182,16 @@ namespace HATAGONG.Outgame.Editor
             background.sprite = baseSprite;
             background.preserveAspect = true;
 
-            TextMeshProUGUI type = CreateText("RequestTypeLabel", rootRect, new Vector2(0f, 225f), new Vector2(330f, 34f), font, 21f, TextAlignmentOptions.Center);
+            TextMeshProUGUI type = CreateText("RequestTypeLabel", rootRect, new Vector2(0f, 225f), new Vector2(330f, 34f), accentFont, 21f, TextAlignmentOptions.Center);
+            type.fontStyle = FontStyles.Bold;
             Image portrait = CreateImage("PortraitPlaceholder", rootRect, new Vector2(-125f, 150f), new Vector2(72f, 72f), new Color32(208, 192, 168, 255));
+            Outline portraitOutline = portrait.gameObject.AddComponent<Outline>();
+            portraitOutline.effectColor = Color.black;
+            portraitOutline.effectDistance = new Vector2(2f, -2f);
+            portraitOutline.useGraphicAlpha = true;
             TextMeshProUGUI requester = CreateText("RequesterNameLabel", rootRect, new Vector2(35f, 170f), new Vector2(230f, 30f), font, 16f, TextAlignmentOptions.Left);
-            TextMeshProUGUI title = CreateText("TitleLabel", rootRect, new Vector2(35f, 132f), new Vector2(230f, 38f), font, 20f, TextAlignmentOptions.Left);
+            TextMeshProUGUI title = CreateText("TitleLabel", rootRect, new Vector2(35f, 132f), new Vector2(230f, 38f), accentFont, 20f, TextAlignmentOptions.Left);
+            title.fontStyle = FontStyles.Bold;
             TextMeshProUGUI difficulty = CreateText("DifficultyLabel", rootRect, new Vector2(-80f, 92f), new Vector2(90f, 24f), font, 15f, TextAlignmentOptions.Left);
 
             RectTransform starsRoot = CreateRect("DifficultyStars", rootRect, new Vector2(55f, 78f), new Vector2(150f, 30f));
@@ -167,15 +216,21 @@ namespace HATAGONG.Outgame.Editor
             {
                 slotBackgrounds[i] = CreateImage("EffectSlot" + (i + 1), effectSlotsRoot, new Vector2(-116f + (116f * i), 0f), new Vector2(108f, 68f), new Color32(142, 142, 142, 255));
                 slotIcons[i] = CreateImage("IconPlaceholder", slotBackgrounds[i].rectTransform, new Vector2(-29f, 0f), new Vector2(34f, 34f), Color.clear);
-                slotIcons[i].sprite = null;
-                slotLabels[i] = CreateText("EffectNameLabel", slotBackgrounds[i].rectTransform, new Vector2(24f, 0f), new Vector2(62f, 52f), font, 11f, TextAlignmentOptions.Center);
+                slotIcons[i].sprite = emptyEffectSprite;
+                slotIcons[i].color = Color.white;
+                slotIcons[i].preserveAspect = true;
+                slotLabels[i] = CreateText("EffectNameLabel", slotBackgrounds[i].rectTransform, new Vector2(24f, 0f), new Vector2(62f, 52f), accentFont, 20f, TextAlignmentOptions.Center);
+                slotLabels[i].fontStyle = FontStyles.Bold;
                 slotLabels[i].textWrappingMode = TextWrappingModes.Normal;
             }
 
             Image buttonImage = CreateImage("PerformButton", rootRect, new Vector2(0f, -225f), new Vector2(220f, 48f), new Color32(76, 126, 177, 255));
+            buttonImage.color = Color.white;
+            buttonImage.preserveAspect = true;
             Button button = buttonImage.gameObject.AddComponent<Button>();
             button.interactable = false;
             TextMeshProUGUI buttonLabel = CreateText("PerformButtonLabel", buttonImage.rectTransform, Vector2.zero, buttonImage.rectTransform.sizeDelta, font, 18f, TextAlignmentOptions.Center);
+            buttonLabel.text = "의뢰 수락";
 
             OutgameRequestCardView view = root.GetComponent<OutgameRequestCardView>();
             var serialized = new SerializedObject(view);
@@ -199,9 +254,15 @@ namespace HATAGONG.Outgame.Editor
                 slot.FindPropertyRelative("iconPlaceholder").objectReferenceValue = slotIcons[i];
                 slot.FindPropertyRelative("effectNameLabel").objectReferenceValue = slotLabels[i];
             }
+            SetSpriteBindings(serialized, "portraitSpriteBindings", PortraitKeys, portraitSprites);
+            SetSpriteBindings(serialized, "effectSpriteBindings", EffectKeys, effectSprites);
+            SetReference(serialized, "emptyEffectSprite", emptyEffectSprite);
+            SetReference(serialized, "performButtonTexture", buttonTexture);
+            SetReference(serialized, "accentFont", accentFont);
             SetReference(serialized, "performButton", button);
             SetReference(serialized, "performButtonLabel", buttonLabel);
             serialized.ApplyModifiedPropertiesWithoutUndo();
+            view.ApplyReferenceLayout();
 
             GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
             UnityEngine.Object.DestroyImmediate(root);
@@ -294,17 +355,29 @@ namespace HATAGONG.Outgame.Editor
                 foreach (string path in required)
                     validation.Check(prefabRoot.transform.Find(path) != null, "Prefab path exists: " + path);
                 Image background = prefabRoot.transform.Find("ClipboardBackground").GetComponent<Image>();
-                validation.Check(background.sprite == LoadRequired<Sprite>(BaseSpritePath), "base.png is directly referenced");
+                validation.Check(background.sprite == LoadRequired<Sprite>(BaseSpritePath), "Img_questui is directly referenced");
                 Image[] stars = prefabRoot.transform.Find("DifficultyStars").GetComponentsInChildren<Image>(true);
                 validation.Check(stars.Length == 3, "Three star Images exist");
                 validation.Check(stars.All(value => value.sprite == LoadRequired<Sprite>(InactiveStarPath)), "Default stars use inactive Sprite");
                 TMP_FontAsset font = LoadRequired<TMP_FontAsset>(FontPath);
+                TMP_FontAsset accentFont = LoadRequired<TMP_FontAsset>(AccentFontPath);
                 TextMeshProUGUI[] texts = prefabRoot.GetComponentsInChildren<TextMeshProUGUI>(true);
                 validation.Check(texts.Length == 10, "Ten TMP labels exist");
-                validation.Check(texts.All(value => value.font == font), "Every TMP label uses required font");
+                TextMeshProUGUI type = prefabRoot.transform.Find("RequestTypeLabel").GetComponent<TextMeshProUGUI>();
+                TextMeshProUGUI title = prefabRoot.transform.Find("TitleLabel").GetComponent<TextMeshProUGUI>();
+                TextMeshProUGUI[] effectNames = prefabRoot.transform.Find("EffectSlots").GetComponentsInChildren<TextMeshProUGUI>(true);
+                validation.Check(type.font == accentFont && title.font == accentFont && effectNames.All(value => value.font == accentFont), "Header, title and effect names use Jua");
+                validation.Check(type.fontStyle == FontStyles.Bold && title.fontStyle == FontStyles.Bold && effectNames.All(value => value.fontStyle == FontStyles.Bold), "Header, title and effect names are bold");
+                validation.Check(effectNames.All(value => Mathf.Approximately(value.fontSize, title.fontSize)), "Effect names match title font size");
+                validation.Check(texts.Except(effectNames).Where(value => value != type && value != title).All(value => value.font == font), "Remaining TMP labels use required body font");
                 Button button = prefabRoot.transform.Find("PerformButton").GetComponent<Button>();
                 validation.Check(!button.interactable, "PerformButton is disabled");
                 validation.Check(button.onClick.GetPersistentEventCount() == 0, "PerformButton persistent OnClick count is zero");
+                Image buttonImage = button.GetComponent<Image>();
+                SerializedObject cardSerialized = new SerializedObject(prefabRoot.GetComponent<OutgameRequestCardView>());
+                validation.Check(cardSerialized.FindProperty("performButtonTexture").objectReferenceValue == LoadRequired<Texture2D>(ButtonSpritePath), "Img_button_request Texture is directly referenced");
+                validation.Check(buttonImage.preserveAspect, "PerformButton preserves Sprite aspect");
+                validation.Check(prefabRoot.transform.Find("PerformButton/PerformButtonLabel").GetComponent<TextMeshProUGUI>().text == "의뢰 수락", "PerformButton uses separate request acceptance text");
             }
             finally
             {
@@ -372,7 +445,11 @@ namespace HATAGONG.Outgame.Editor
 
                 TextMeshProUGUI[] allTexts = popup.GetComponentsInChildren<TextMeshProUGUI>(true);
                 TMP_FontAsset requiredFont = LoadRequired<TMP_FontAsset>(FontPath);
-                validation.Check(allTexts.All(value => value.font == requiredFont), "All runtime TMP labels use required font");
+                TMP_FontAsset requiredAccentFont = LoadRequired<TMP_FontAsset>(AccentFontPath);
+                validation.Check(allTexts.All(value =>
+                    IsAccentLabel(value)
+                        ? value.font == requiredAccentFont && value.fontStyle == FontStyles.Bold
+                        : value.font == requiredFont), "Runtime TMP labels use their required body/accent fonts");
                 validation.Check(allTexts.All(value => value.text.IndexOf('\uFFFD') < 0 && value.text.IndexOf('\u25A1') < 0), "No replacement square characters");
                 validation.Check(popup.Cards.All(CardChildrenStayInside), "All card UI stays inside base area");
                 validation.Check(popup.Cards.All(DescriptionAndButtonDoNotOverlap), "Description, effects and button do not overlap");
@@ -423,11 +500,10 @@ namespace HATAGONG.Outgame.Editor
                 Transform icon = slot.Find("IconPlaceholder");
                 TextMeshProUGUI label = slot.Find("EffectNameLabel").GetComponent<TextMeshProUGUI>();
                 bool shouldFill = i < definition.Effects.Count;
-                if (icon.gameObject.activeSelf != shouldFill || label.gameObject.activeSelf != shouldFill) return false;
+                if (!icon.gameObject.activeSelf || label.gameObject.activeSelf != shouldFill) return false;
                 if (shouldFill && label.text != definition.Effects[i].EffectName) return false;
                 if (!shouldFill && !string.IsNullOrEmpty(label.text)) return false;
-                Color32 expectedEmpty = new Color32(142, 142, 142, 255);
-                if (!shouldFill && slot.GetComponent<Image>().color != expectedEmpty) return false;
+                if (!shouldFill && icon.GetComponent<Image>().sprite != LoadRequired<Sprite>(EmptyEffectSpritePath)) return false;
             }
             return true;
         }
@@ -435,7 +511,7 @@ namespace HATAGONG.Outgame.Editor
         private static bool HasCorrectCardRatio(OutgameRequestCardView card)
         {
             Rect rect = ((RectTransform)card.transform).rect;
-            float expected = 1038f / 1442f;
+            float expected = 1015f / 1512f;
             return Mathf.Abs((rect.width / rect.height) - expected) < 0.002f;
         }
 
@@ -458,11 +534,12 @@ namespace HATAGONG.Outgame.Editor
             RectTransform description = card.transform.Find("DescriptionLabel") as RectTransform;
             RectTransform effects = card.transform.Find("EffectSlots") as RectTransform;
             RectTransform button = card.transform.Find("PerformButton") as RectTransform;
-            float descriptionBottom = description.anchoredPosition.y - (description.rect.height * 0.5f);
-            float effectsTop = effects.anchoredPosition.y + (effects.rect.height * 0.5f);
-            float effectsBottom = effects.anchoredPosition.y - (effects.rect.height * 0.5f);
-            float buttonTop = button.anchoredPosition.y + (button.rect.height * 0.5f);
-            return descriptionBottom > effectsTop && effectsBottom > buttonTop;
+            RectTransform root = card.transform as RectTransform;
+            Bounds descriptionBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(root, description);
+            Bounds effectsBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(root, effects);
+            Bounds buttonBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(root, button);
+            return descriptionBounds.min.y >= effectsBounds.max.y - 0.5f &&
+                   effectsBounds.min.y >= buttonBounds.max.y - 0.5f;
         }
 
         private static bool HasMissingComponent(GameObject root)
@@ -549,6 +626,30 @@ namespace HATAGONG.Outgame.Editor
             property.arraySize = values.Length;
             for (int i = 0; i < values.Length; i++)
                 property.GetArrayElementAtIndex(i).objectReferenceValue = values[i];
+        }
+
+        private static bool IsAccentLabel(TextMeshProUGUI text)
+        {
+            string name = text == null ? string.Empty : text.gameObject.name;
+            return name == "RequestTypeLabel" || name == "TitleLabel" || name == "EffectNameLabel";
+        }
+
+        private static void SetSpriteBindings(
+            SerializedObject serialized,
+            string propertyName,
+            IReadOnlyList<string> keys,
+            IReadOnlyList<Sprite> sprites)
+        {
+            if (keys.Count != sprites.Count)
+                throw new InvalidOperationException($"Sprite binding length mismatch for {propertyName}.");
+            SerializedProperty property = serialized.FindProperty(propertyName);
+            property.arraySize = keys.Count;
+            for (int i = 0; i < keys.Count; i++)
+            {
+                SerializedProperty element = property.GetArrayElementAtIndex(i);
+                element.FindPropertyRelative("key").stringValue = keys[i];
+                element.FindPropertyRelative("sprite").objectReferenceValue = sprites[i];
+            }
         }
 
         private static void EnsureFolder(string parent, string name)

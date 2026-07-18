@@ -1,4 +1,8 @@
-EffectId,Enabled,EffectName,EffectIconKey,Description
-EFFECT_FOCUS,TRUE,집중 요청,request_effect_focus,임시 기획용 집중 특수효과 정의입니다.
-EFFECT_RUSH,TRUE,긴급 요청,request_effect_rush,"임시 기획용 긴급, 속도 특수효과 정의입니다."
-EFFECT_BONUS,TRUE,추가 보상,request_effect_bonus,"임시 기획용 ""추가 보상"" 특수효과 정의입니다."
+﻿EffectId,Enabled,EffectName,EffectIconKey,EffectScriptKey,Description
+EFFECT_HARD,TRUE,단단한 타일,Img_icon_quest1,effect_hard,페이즈1 모든 타일의 체력이 향상됩니다.
+EFFECT_SLIPPERY,TRUE,미끄러운 퍼즐,Img_icon_quest2,effect_slippery,페이즈3 퍼즐의 흡착 보조 범위가 축소됩니다.
+EFFECT_NOITEM,TRUE,무장비,Img_icon_quest3,effect_noitem,해당 의뢰에서는 아이템을 사용할 수 없습니다.
+EFFECT_FATIGUE,TRUE,컨디션 저하,Img_icon_quest4,effect_fatigue,페이즈1의 빠른 연속 타격이 제한됩니다.
+EFFECT_SUPER,TRUE,초강력 타일,Img_icon_quest5,effect_super,체력이 높은 특수 타일이 등장합니다.
+EFFECT_TIMEDOWN,TRUE,시간 감소,Img_icon_quest6,effect_timedown,각 페이즈의 제한 시간이 감소합니다.
+EFFECT_CHEMICAL,TRUE,화학 오염,Img_icon_quest7,effect_chemical,페이즈2 일부 영역에 추가 도포 작업이 필요합니다.

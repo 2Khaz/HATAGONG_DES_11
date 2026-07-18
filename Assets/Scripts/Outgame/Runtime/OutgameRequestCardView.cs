@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using HATAGONG.GameFlow;
 using TMPro;
 using UnityEngine;
@@ -10,6 +9,16 @@ namespace HATAGONG.Outgame
     public sealed class OutgameRequestCardView : MonoBehaviour
     {
         [Serializable]
+        private sealed class SpriteKeyBinding
+        {
+            [SerializeField] private string key;
+            [SerializeField] private Sprite sprite;
+
+            public string Key => key;
+            public Sprite Sprite => sprite;
+        }
+
+        [Serializable]
         private sealed class EffectSlotView
         {
             [SerializeField] private Image background;
@@ -18,21 +27,50 @@ namespace HATAGONG.Outgame
 
             public bool IsFilled { get; private set; }
             public string EffectName => effectNameLabel == null ? string.Empty : effectNameLabel.text;
+            public RectTransform GetRoot() => background == null ? null : background.rectTransform.parent as RectTransform;
 
-            public void ResetDisplay()
+            public void ApplyReferenceLayout(Vector2 anchorMin, Vector2 anchorMax)
+            {
+                SetNormalizedRect(background == null ? null : background.rectTransform, anchorMin, anchorMax);
+                SetNormalizedRect(iconPlaceholder == null ? null : iconPlaceholder.rectTransform,
+                    new Vector2(0.05f, 0.02f), new Vector2(0.95f, 0.76f));
+                SetNormalizedRect(effectNameLabel == null ? null : effectNameLabel.rectTransform,
+                    new Vector2(0f, 0.76f), Vector2.one);
+
+                if (iconPlaceholder != null) iconPlaceholder.preserveAspect = true;
+                if (effectNameLabel != null)
+                {
+                    effectNameLabel.alignment = TextAlignmentOptions.Center;
+                    effectNameLabel.textWrappingMode = TextWrappingModes.NoWrap;
+                    effectNameLabel.enableAutoSizing = true;
+                }
+            }
+
+            public void ApplyAccentStyle(TMP_FontAsset font, float titleFontSize)
+            {
+                if (effectNameLabel == null || font == null) return;
+                effectNameLabel.font = font;
+                effectNameLabel.fontStyle = FontStyles.Bold;
+                effectNameLabel.fontSize = titleFontSize;
+                effectNameLabel.fontSizeMin = Mathf.Max(8f, titleFontSize * 0.65f);
+                effectNameLabel.fontSizeMax = titleFontSize;
+            }
+
+            public void ResetDisplay(Sprite emptySprite)
             {
                 IsFilled = false;
                 if (background != null)
                 {
-                    background.color = new Color32(142, 142, 142, 255);
+                    background.color = Color.clear;
                     background.raycastTarget = false;
                 }
                 if (iconPlaceholder != null)
                 {
-                    iconPlaceholder.sprite = null;
-                    iconPlaceholder.color = Color.clear;
+                    iconPlaceholder.sprite = emptySprite;
+                    iconPlaceholder.color = Color.white;
+                    iconPlaceholder.preserveAspect = true;
                     iconPlaceholder.raycastTarget = false;
-                    iconPlaceholder.gameObject.SetActive(false);
+                    iconPlaceholder.gameObject.SetActive(true);
                 }
                 if (effectNameLabel != null)
                 {
@@ -41,16 +79,15 @@ namespace HATAGONG.Outgame
                 }
             }
 
-            public void Bind(OutgameRequestEffectDefinition definition, Color32 iconColor)
+            public void Bind(OutgameRequestEffectDefinition definition, Sprite iconSprite, Sprite emptySprite)
             {
-                ResetDisplay();
+                ResetDisplay(emptySprite);
                 if (definition == null) return;
                 IsFilled = true;
-                if (background != null) background.color = new Color32(238, 232, 220, 255);
                 if (iconPlaceholder != null)
                 {
-                    iconPlaceholder.sprite = null;
-                    iconPlaceholder.color = iconColor;
+                    iconPlaceholder.sprite = iconSprite;
+                    iconPlaceholder.color = Color.white;
                     iconPlaceholder.gameObject.SetActive(true);
                 }
                 if (effectNameLabel != null)
@@ -74,15 +111,13 @@ namespace HATAGONG.Outgame
         [SerializeField] private TextMeshProUGUI descriptionTitleLabel;
         [SerializeField] private TextMeshProUGUI descriptionLabel;
         [SerializeField] private EffectSlotView[] effectSlots = Array.Empty<EffectSlotView>();
+        [SerializeField] private SpriteKeyBinding[] portraitSpriteBindings = Array.Empty<SpriteKeyBinding>();
+        [SerializeField] private SpriteKeyBinding[] effectSpriteBindings = Array.Empty<SpriteKeyBinding>();
+        [SerializeField] private Sprite emptyEffectSprite;
+        [SerializeField] private Texture2D performButtonTexture;
+        [SerializeField] private TMP_FontAsset accentFont;
         [SerializeField] private Button performButton;
         [SerializeField] private TextMeshProUGUI performButtonLabel;
-
-        private static readonly Color32[] EffectColors =
-        {
-            new Color32(71, 151, 230, 255),
-            new Color32(244, 179, 62, 255),
-            new Color32(107, 190, 119, 255)
-        };
 
         private RectTransform cardRect;
         private RectTransform[] layoutRects = Array.Empty<RectTransform>();
@@ -93,6 +128,7 @@ namespace HATAGONG.Outgame
         private float[] baseFontSizeMins = Array.Empty<float>();
         private float[] baseFontSizeMaxes = Array.Empty<float>();
         private Vector2 baseCardSize;
+        private Sprite runtimeButtonSprite;
 
         public OutgameRequestOffer BoundOffer { get; private set; }
         public event Action<OutgameRequestOffer> PerformRequested;
@@ -115,6 +151,9 @@ namespace HATAGONG.Outgame
 
         private void Awake()
         {
+            ConfigureButtonSprite();
+            ConfigurePortraitFrame();
+            ApplyReferenceLayout();
             CaptureBaseLayout();
             if (performButton != null)
             {
@@ -126,6 +165,11 @@ namespace HATAGONG.Outgame
         private void OnDestroy()
         {
             if (performButton != null) performButton.onClick.RemoveListener(HandlePerformClicked);
+            if (runtimeButtonSprite != null)
+            {
+                if (Application.isPlaying) Destroy(runtimeButtonSprite);
+                else DestroyImmediate(runtimeButtonSprite);
+            }
         }
 
         public void Bind(OutgameRequestOffer offer)
@@ -142,13 +186,24 @@ namespace HATAGONG.Outgame
             titleLabel.text = definition.Title;
             descriptionLabel.text = definition.Description;
 
+            portraitPlaceholder.sprite = ResolveSprite(
+                portraitSpriteBindings,
+                definition.PortraitKey,
+                "portrait");
+            portraitPlaceholder.color = Color.white;
+            portraitPlaceholder.preserveAspect = true;
+
             int activeStars = GetActiveStarCount(definition.Difficulty);
             for (int i = 0; i < difficultyStars.Length; i++)
                 difficultyStars[i].sprite = i < activeStars ? activeStarSprite : inactiveStarSprite;
 
             int effectCount = Math.Min(effectSlots.Length, definition.Effects.Count);
             for (int i = 0; i < effectCount; i++)
-                effectSlots[i].Bind(definition.Effects[i], EffectColors[i % EffectColors.Length]);
+            {
+                OutgameRequestEffectDefinition effect = definition.Effects[i];
+                Sprite effectSprite = ResolveSprite(effectSpriteBindings, effect.EffectIconKey, "effect");
+                effectSlots[i].Bind(effect, effectSprite, emptyEffectSprite);
+            }
         }
 
         public void SetPerformInteractable(bool interactable)
@@ -215,6 +270,168 @@ namespace HATAGONG.Outgame
             }
         }
 
+        public void ApplyReferenceLayout()
+        {
+            RectTransform root = transform as RectTransform;
+            if (root == null) throw new InvalidOperationException("Request Card requires a RectTransform.");
+            root.anchorMin = new Vector2(0.5f, 0.5f);
+            root.anchorMax = new Vector2(0.5f, 0.5f);
+            root.pivot = new Vector2(0.5f, 0.5f);
+            root.localRotation = Quaternion.identity;
+            root.localScale = Vector3.one;
+
+            SetNormalizedRect(clipboardBackground == null ? null : clipboardBackground.rectTransform,
+                Vector2.zero, Vector2.one);
+            SetNormalizedRect(requestTypeLabel == null ? null : requestTypeLabel.rectTransform,
+                new Vector2(0.12f, 0.825f), new Vector2(0.88f, 0.915f));
+            SetNormalizedRect(portraitPlaceholder == null ? null : portraitPlaceholder.rectTransform,
+                new Vector2(0.075f, 0.575f), new Vector2(0.365f, 0.835f));
+            SetNormalizedRect(requesterNameLabel == null ? null : requesterNameLabel.rectTransform,
+                new Vector2(0.39f, 0.755f), new Vector2(0.92f, 0.83f));
+            SetNormalizedRect(titleLabel == null ? null : titleLabel.rectTransform,
+                new Vector2(0.39f, 0.655f), new Vector2(0.92f, 0.755f));
+            SetNormalizedRect(difficultyLabel == null ? null : difficultyLabel.rectTransform,
+                new Vector2(0.39f, 0.585f), new Vector2(0.56f, 0.655f));
+            SetNormalizedRect(descriptionTitleLabel == null ? null : descriptionTitleLabel.rectTransform,
+                new Vector2(0.075f, 0.49f), new Vector2(0.35f, 0.555f));
+            SetNormalizedRect(descriptionLabel == null ? null : descriptionLabel.rectTransform,
+                new Vector2(0.075f, 0.355f), new Vector2(0.925f, 0.495f));
+
+            RectTransform starsRoot = difficultyStars.Length == 0 || difficultyStars[0] == null
+                ? null
+                : difficultyStars[0].rectTransform.parent as RectTransform;
+            SetNormalizedRect(starsRoot, new Vector2(0.56f, 0.565f), new Vector2(0.92f, 0.66f));
+            for (int i = 0; i < difficultyStars.Length; i++)
+            {
+                float left = i / 3f + 0.03f;
+                float right = (i + 1f) / 3f - 0.03f;
+                SetNormalizedRect(difficultyStars[i] == null ? null : difficultyStars[i].rectTransform,
+                    new Vector2(left, 0.08f), new Vector2(right, 0.92f));
+                if (difficultyStars[i] != null) difficultyStars[i].preserveAspect = true;
+            }
+
+            RectTransform effectsRoot = effectSlots.Length == 0 || effectSlots[0] == null
+                ? null
+                : effectSlots[0].GetRoot();
+            SetNormalizedRect(effectsRoot, new Vector2(0.075f, 0.16f), new Vector2(0.925f, 0.35f));
+            Vector2[] slotMins =
+            {
+                new Vector2(0f, 0f), new Vector2(0.35f, 0f), new Vector2(0.70f, 0f)
+            };
+            Vector2[] slotMaxes =
+            {
+                new Vector2(0.30f, 1f), new Vector2(0.65f, 1f), new Vector2(1f, 1f)
+            };
+            for (int i = 0; i < effectSlots.Length && i < 3; i++)
+                effectSlots[i]?.ApplyReferenceLayout(slotMins[i], slotMaxes[i]);
+
+            SetNormalizedRect(performButton == null ? null : performButton.transform as RectTransform,
+                new Vector2(0.18f, 0.07f), new Vector2(0.82f, 0.155f));
+            SetNormalizedRect(performButtonLabel == null ? null : performButtonLabel.rectTransform,
+                Vector2.zero, Vector2.one);
+
+            if (clipboardBackground != null)
+            {
+                clipboardBackground.preserveAspect = true;
+                clipboardBackground.raycastTarget = false;
+            }
+            if (portraitPlaceholder != null)
+            {
+                portraitPlaceholder.preserveAspect = true;
+                portraitPlaceholder.raycastTarget = false;
+            }
+            if (performButton != null && performButton.targetGraphic is Image buttonImage)
+                buttonImage.preserveAspect = true;
+
+            ConfigureText(requestTypeLabel, TextAlignmentOptions.Center, false);
+            ConfigureText(requesterNameLabel, TextAlignmentOptions.Left, false);
+            ConfigureText(titleLabel, TextAlignmentOptions.Left, true);
+            ConfigureText(difficultyLabel, TextAlignmentOptions.Left, false);
+            ConfigureText(descriptionTitleLabel, TextAlignmentOptions.Left, false);
+            ConfigureText(descriptionLabel, TextAlignmentOptions.TopLeft, true);
+            ConfigureText(performButtonLabel, TextAlignmentOptions.Center, false);
+
+            ApplyAccentStyle(requestTypeLabel);
+            ApplyAccentStyle(titleLabel);
+            float titleFontSize = titleLabel == null ? 20f : titleLabel.fontSize;
+            for (int i = 0; i < effectSlots.Length; i++)
+                effectSlots[i]?.ApplyAccentStyle(accentFont, titleFontSize);
+        }
+
+        private void ApplyAccentStyle(TextMeshProUGUI text)
+        {
+            if (text == null || accentFont == null) return;
+            text.font = accentFont;
+            text.fontStyle = FontStyles.Bold;
+        }
+
+        private static void ConfigureText(TextMeshProUGUI text, TextAlignmentOptions alignment, bool wrap)
+        {
+            if (text == null) return;
+            text.alignment = alignment;
+            text.enableAutoSizing = true;
+            text.textWrappingMode = wrap ? TextWrappingModes.Normal : TextWrappingModes.NoWrap;
+            text.overflowMode = TextOverflowModes.Overflow;
+            text.raycastTarget = false;
+        }
+
+        private static void SetNormalizedRect(RectTransform rect, Vector2 anchorMin, Vector2 anchorMax)
+        {
+            if (rect == null) return;
+            rect.anchorMin = anchorMin;
+            rect.anchorMax = anchorMax;
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.sizeDelta = Vector2.zero;
+            rect.localRotation = Quaternion.identity;
+            rect.localScale = Vector3.one;
+        }
+
+        private static Sprite ResolveSprite(SpriteKeyBinding[] bindings, string key, string role)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                throw new InvalidOperationException($"Request {role} key is empty.");
+            for (int i = 0; i < bindings.Length; i++)
+            {
+                SpriteKeyBinding binding = bindings[i];
+                if (binding != null && string.Equals(binding.Key, key, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (binding.Sprite == null)
+                        throw new InvalidOperationException($"Request {role} sprite is missing for key '{key}'.");
+                    return binding.Sprite;
+                }
+            }
+            if (string.Equals(role, "effect", StringComparison.Ordinal))
+            {
+                Sprite resourceSprite = Resources.Load<Sprite>("Outgame/Request/" + key);
+                if (resourceSprite != null) return resourceSprite;
+            }
+            throw new InvalidOperationException($"Request {role} sprite binding was not found for key '{key}'.");
+        }
+
+        private void ConfigureButtonSprite()
+        {
+            if (performButton == null || !(performButton.targetGraphic is Image buttonImage)) return;
+            if (buttonImage.sprite != null || performButtonTexture == null) return;
+            runtimeButtonSprite = Sprite.Create(
+                performButtonTexture,
+                new Rect(0f, 0f, performButtonTexture.width, performButtonTexture.height),
+                new Vector2(0.5f, 0.5f),
+                100f);
+            runtimeButtonSprite.name = performButtonTexture.name + "_RuntimeSprite";
+            buttonImage.sprite = runtimeButtonSprite;
+        }
+
+        private void ConfigurePortraitFrame()
+        {
+            if (portraitPlaceholder == null) return;
+            Outline outline = portraitPlaceholder.GetComponent<Outline>();
+            if (outline == null) outline = portraitPlaceholder.gameObject.AddComponent<Outline>();
+            outline.effectColor = Color.black;
+            outline.effectDistance = new Vector2(2f, -2f);
+            outline.useGraphicAlpha = true;
+        }
+
         private void HandlePerformClicked()
         {
             OutgameRequestOffer offer = BoundOffer;
@@ -230,10 +447,11 @@ namespace HATAGONG.Outgame
             difficultyLabel.text = "난이도:";
             descriptionTitleLabel.text = "의뢰 내용:";
             descriptionLabel.text = string.Empty;
-            performButtonLabel.text = "수행하기";
+            performButtonLabel.text = "의뢰 수락";
             performButton.interactable = false;
             portraitPlaceholder.sprite = null;
-            portraitPlaceholder.color = new Color32(208, 192, 168, 255);
+            portraitPlaceholder.color = Color.white;
+            portraitPlaceholder.preserveAspect = true;
             portraitPlaceholder.raycastTarget = false;
             clipboardBackground.raycastTarget = false;
 
@@ -243,7 +461,7 @@ namespace HATAGONG.Outgame
                 difficultyStars[i].raycastTarget = false;
             }
             for (int i = 0; i < effectSlots.Length; i++)
-                effectSlots[i]?.ResetDisplay();
+                effectSlots[i]?.ResetDisplay(emptyEffectSprite);
         }
 
         private static int GetActiveStarCount(GameDifficulty difficulty)

@@ -12,13 +12,18 @@ namespace HATAGONG.Outgame
         public static readonly IReadOnlyList<string> RequestHeaders = Array.AsReadOnly(new[]
         {
             "RequestId", "Enabled", "RequestType", "Difficulty", "PermanentSeed",
-            "RequesterName", "PortraitKey", "Title", "Description",
-            "Effect1Id", "Effect2Id", "Effect3Id"
+            "Phase1Seed", "Phase3Seed", "Phase3ImageKey", "RequesterName", "PortraitKey",
+            "Title", "Description", "Effect1Id", "Effect2Id", "Effect3Id"
         });
+
+        private static readonly HashSet<string> AllowedPhase3ImageKeys = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "Img_bigtiles1", "Img_bigtiles2", "Img_bigtiles3"
+        };
 
         public static readonly IReadOnlyList<string> EffectHeaders = Array.AsReadOnly(new[]
         {
-            "EffectId", "Enabled", "EffectName", "EffectIconKey", "Description"
+            "EffectId", "Enabled", "EffectName", "EffectIconKey", "EffectScriptKey", "Description"
         });
 
         public static OutgameRequestTableLoadResult ParseAndValidate(
@@ -34,6 +39,12 @@ namespace HATAGONG.Outgame
             var rawEffects = ParseEffects(effectDocument, errors);
             var rawRequests = ParseRequests(requestDocument, errors);
             ValidateUniqueEffects(rawEffects, errors);
+            for (int i = 0; i < RequestEffectRuntime.SupportedEffectIds.Count; i++)
+            {
+                string expectedId = RequestEffectRuntime.SupportedEffectIds[i];
+                if (!rawEffects.Any(effect => string.Equals(effect.EffectId, expectedId, StringComparison.Ordinal)))
+                    errors.Add(Error("request_effects.csv", 0, "EffectId", "Required runtime EffectId is missing.", expectedId));
+            }
             ValidateRequests(rawRequests, rawEffects, errors);
 
             if (errors.Count > 0)
@@ -47,7 +58,7 @@ namespace HATAGONG.Outgame
             {
                 RawEffect raw = rawEffects[i];
                 var definition = new OutgameRequestEffectDefinition(
-                    raw.EffectId, raw.Enabled, raw.EffectName, raw.EffectIconKey, raw.Description);
+                    raw.EffectId, raw.Enabled, raw.EffectName, raw.EffectIconKey, raw.EffectScriptKey, raw.Description);
                 effectDefinitions.Add(definition);
                 effectsById.Add(definition.EffectId, definition);
             }
@@ -67,6 +78,9 @@ namespace HATAGONG.Outgame
                     raw.RequestType,
                     raw.Difficulty,
                     raw.PermanentSeed,
+                    raw.Phase1Seed,
+                    raw.Phase3Seed,
+                    raw.Phase3ImageKey,
                     raw.RequesterName,
                     raw.PortraitKey,
                     raw.Title,
@@ -312,12 +326,25 @@ namespace HATAGONG.Outgame
                 bool enabled = ParseBoolean(row, 1, "Enabled", "request_effects.csv", errors);
                 string effectName = row[2];
                 string effectIconKey = row[3];
-                string description = ConvertDescription(row[4]);
+                string effectScriptKey = NormalizeId(row[4]);
+                string description = ConvertDescription(row[5]);
                 Require(row, 2, "EffectName", effectName, "request_effects.csv", errors);
                 Require(row, 3, "EffectIconKey", effectIconKey, "request_effects.csv", errors);
-                Require(row, 4, "Description", description, "request_effects.csv", errors);
+                Require(row, 4, "EffectScriptKey", effectScriptKey, "request_effects.csv", errors);
+                Require(row, 5, "Description", description, "request_effects.csv", errors);
+                if (RequestEffectRuntime.TryGetContract(effectId, out string expectedIcon, out string expectedScript))
+                {
+                    if (!string.Equals(effectIconKey, expectedIcon, StringComparison.Ordinal))
+                        errors.Add(Error("request_effects.csv", row.RowNumber, "EffectIconKey", $"EffectIconKey must be '{expectedIcon}' for {effectId}.", effectIconKey));
+                    if (!string.Equals(effectScriptKey, expectedScript, StringComparison.Ordinal))
+                        errors.Add(Error("request_effects.csv", row.RowNumber, "EffectScriptKey", $"EffectScriptKey must be '{expectedScript}' for {effectId}.", effectScriptKey));
+                }
+                else
+                {
+                    errors.Add(Error("request_effects.csv", row.RowNumber, "EffectId", "EffectId has no runtime contract.", effectId));
+                }
                 result.Add(new RawEffect(
-                    row.RowNumber, effectId, enabled, effectName, effectIconKey, description));
+                    row.RowNumber, effectId, enabled, effectName, effectIconKey, effectScriptKey, description));
             }
             return result;
         }
@@ -336,19 +363,29 @@ namespace HATAGONG.Outgame
                 bool enabled = ParseBoolean(row, 1, "Enabled", "requests.csv", errors);
                 RequestType requestType = ParseRequestType(row, 2, errors);
                 GameDifficulty difficulty = ParseDifficulty(row, 3, errors);
-                int permanentSeed = ParseSeed(row, 4, errors);
-                string requesterName = row[5];
-                string portraitKey = row[6];
-                string title = row[7];
-                string description = ConvertDescription(row[8]);
-                Require(row, 5, "RequesterName", requesterName, "requests.csv", errors);
-                Require(row, 6, "PortraitKey", portraitKey, "requests.csv", errors);
-                Require(row, 7, "Title", title, "requests.csv", errors);
-                Require(row, 8, "Description", description, "requests.csv", errors);
+                int permanentSeed = ParseSeed(row, 4, "PermanentSeed", errors);
+                int phase1Seed = ParseSeed(row, 5, "Phase1Seed", errors);
+                int phase3Seed = ParseSeed(row, 6, "Phase3Seed", errors);
+                string phase3ImageKey = NormalizeId(row[7]);
+                string requesterName = row[8];
+                string portraitKey = row[9];
+                string title = row[10];
+                string description = ConvertDescription(row[11]);
+                Require(row, 7, "Phase3ImageKey", phase3ImageKey, "requests.csv", errors);
+                if (!string.IsNullOrEmpty(phase3ImageKey) && !AllowedPhase3ImageKeys.Contains(phase3ImageKey))
+                {
+                    errors.Add(Error(
+                        "requests.csv", row.RowNumber, "Phase3ImageKey",
+                        "Phase3ImageKey must be Img_bigtiles1, Img_bigtiles2, or Img_bigtiles3.", phase3ImageKey));
+                }
+                Require(row, 8, "RequesterName", requesterName, "requests.csv", errors);
+                Require(row, 9, "PortraitKey", portraitKey, "requests.csv", errors);
+                Require(row, 10, "Title", title, "requests.csv", errors);
+                Require(row, 11, "Description", description, "requests.csv", errors);
 
-                string effect1 = NormalizeId(row[9]);
-                string effect2 = NormalizeId(row[10]);
-                string effect3 = NormalizeId(row[11]);
+                string effect1 = NormalizeId(row[12]);
+                string effect2 = NormalizeId(row[13]);
+                string effect3 = NormalizeId(row[14]);
                 if (string.IsNullOrEmpty(effect1) &&
                     (!string.IsNullOrEmpty(effect2) || !string.IsNullOrEmpty(effect3)))
                 {
@@ -393,6 +430,9 @@ namespace HATAGONG.Outgame
                     requestType,
                     difficulty,
                     permanentSeed,
+                    phase1Seed,
+                    phase3Seed,
+                    phase3ImageKey,
                     requesterName,
                     portraitKey,
                     title,
@@ -431,6 +471,7 @@ namespace HATAGONG.Outgame
         {
             var requestIds = new HashSet<string>(StringComparer.Ordinal);
             var seedOwners = new Dictionary<int, string>();
+            var seedTupleOwners = new Dictionary<string, string>(StringComparer.Ordinal);
             var effectsById = new Dictionary<string, RawEffect>(StringComparer.Ordinal);
             for (int i = 0; i < effects.Count; i++)
             {
@@ -463,6 +504,23 @@ namespace HATAGONG.Outgame
                     else if (!seedOwners.ContainsKey(request.PermanentSeed))
                     {
                         seedOwners.Add(request.PermanentSeed, request.RequestId);
+                    }
+                }
+                if (request.PermanentSeed > 0 && request.Phase1Seed > 0 && request.Phase3Seed > 0)
+                {
+                    string tuple = request.PermanentSeed.ToString(CultureInfo.InvariantCulture) + ":" +
+                        request.Phase1Seed.ToString(CultureInfo.InvariantCulture) + ":" +
+                        request.Phase3Seed.ToString(CultureInfo.InvariantCulture);
+                    if (seedTupleOwners.TryGetValue(tuple, out string tupleOwner) &&
+                        !string.Equals(tupleOwner, request.RequestId, StringComparison.Ordinal))
+                    {
+                        errors.Add(Error(
+                            "requests.csv", request.RowNumber, "Phase3Seed",
+                            $"The complete seed tuple is already owned by RequestId '{tupleOwner}'.", tuple));
+                    }
+                    else if (!seedTupleOwners.ContainsKey(tuple))
+                    {
+                        seedTupleOwners.Add(tuple, request.RequestId);
                     }
                 }
 
@@ -545,21 +603,22 @@ namespace HATAGONG.Outgame
         private static int ParseSeed(
             CsvRow row,
             int index,
+            string column,
             List<OutgameRequestValidationError> errors)
         {
             string value = row[index].Trim();
             if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int seed))
             {
                 errors.Add(Error(
-                    "requests.csv", row.RowNumber, "PermanentSeed",
-                    "PermanentSeed must be a valid int.", value));
+                    "requests.csv", row.RowNumber, column,
+                    column + " must be a valid int.", value));
                 return 0;
             }
             if (seed <= 0)
             {
                 errors.Add(Error(
-                    "requests.csv", row.RowNumber, "PermanentSeed",
-                    "PermanentSeed must be greater than zero.", value));
+                    "requests.csv", row.RowNumber, column,
+                    column + " must be greater than zero.", value));
             }
             return seed;
         }
@@ -633,6 +692,7 @@ namespace HATAGONG.Outgame
                 bool enabled,
                 string effectName,
                 string effectIconKey,
+                string effectScriptKey,
                 string description)
             {
                 RowNumber = rowNumber;
@@ -640,6 +700,7 @@ namespace HATAGONG.Outgame
                 Enabled = enabled;
                 EffectName = effectName;
                 EffectIconKey = effectIconKey;
+                EffectScriptKey = effectScriptKey;
                 Description = description;
             }
 
@@ -648,6 +709,7 @@ namespace HATAGONG.Outgame
             public bool Enabled { get; }
             public string EffectName { get; }
             public string EffectIconKey { get; }
+            public string EffectScriptKey { get; }
             public string Description { get; }
         }
 
@@ -660,6 +722,9 @@ namespace HATAGONG.Outgame
                 RequestType requestType,
                 GameDifficulty difficulty,
                 int permanentSeed,
+                int phase1Seed,
+                int phase3Seed,
+                string phase3ImageKey,
                 string requesterName,
                 string portraitKey,
                 string title,
@@ -672,6 +737,9 @@ namespace HATAGONG.Outgame
                 RequestType = requestType;
                 Difficulty = difficulty;
                 PermanentSeed = permanentSeed;
+                Phase1Seed = phase1Seed;
+                Phase3Seed = phase3Seed;
+                Phase3ImageKey = phase3ImageKey;
                 RequesterName = requesterName;
                 PortraitKey = portraitKey;
                 Title = title;
@@ -685,6 +753,9 @@ namespace HATAGONG.Outgame
             public RequestType RequestType { get; }
             public GameDifficulty Difficulty { get; }
             public int PermanentSeed { get; }
+            public int Phase1Seed { get; }
+            public int Phase3Seed { get; }
+            public string Phase3ImageKey { get; }
             public string RequesterName { get; }
             public string PortraitKey { get; }
             public string Title { get; }
